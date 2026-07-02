@@ -1,0 +1,32 @@
+# Per-instance configuration (strategy + identity only).
+# Start the daemon by NAME:  trex-tvr --config instance.example
+# Shared infra + secrets live in .env (NOT here) — see config/.env.example.
+
+instance_key = "default"
+poll_interval_seconds = 30
+rpc_timeout_seconds = 5
+worker_count = 20
+
+# Slot sizing: KRW allocated per buy (top-level, not under [strategy]).
+entry_capital_krw = 1000000
+
+# Schedule windows are KST "HH:MM", half-open [start, end). Cycle runs only inside.
+[[schedule]]
+start = "09:15"
+end = "15:20"
+
+# Exactly ONE [strategy.<id>] table — its key is the strategy_id and MUST match the
+# id you register in strategies/registry.py and the events queue name.
+# TODO(설계): TVR 파라미터 확정 시 min_price를 target_weight/rebalance_threshold 등으로 교체.
+[strategy.tvr_v1]
+min_price = 1000
+
+# Exit thresholds → declared on the buy intent; trex-core's safety-sell enforces them.
+[exit]
+stop_loss_pct = 2.0
+take_profit_pct = 4.0
+
+# Optional execution policy (omit the whole section to keep core defaults).
+[execution]
+timeout_sec = 30
+slippage_pct = 0.5

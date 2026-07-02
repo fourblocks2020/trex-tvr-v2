@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trex-tvr-v1"
+version = "0.1.0"
+description = "Target-Value Rebalancer (TVR) — constant-mix 목표비율 리밸런싱 장기전략 데몬 (pure AMQP)"
+requires-python = ">=3.12"
+dependencies = [
+    "pika>=1.3",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+    "redis>=5.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+trex-tvr = "trex_tvr.runtime.cli:main"
+trex-tvr-backtest = "trex_tvr.backtest.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["trex_tvr*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

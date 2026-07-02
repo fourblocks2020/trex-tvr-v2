@@ -1,0 +1,23 @@
+/.venv/
+/temp/
+# Backtest candle dump output (regenerate with scripts/run_dump.py)
+/data/
+# git worktree metadata (팀 정책 — worktree 격리 잔존물 오염 방지)
+/.claude/worktrees/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets / env (12-factor) — never commit real .env
+.env
+**/.env
+
+# config/ : commit only example templates, never real instance configs or secrets
+config/*
+!config/*.example.toml
+!config/.env.example
+!config/*.csv
