@@ -1,12 +1,12 @@
 # 0. 문서 상태
 
-- 상태: draft
+- 상태: confirmed
 - 문서 ID: dcy-001_20260702_target-value-rebalancing
 - 이슈명: target-value(constant-mix) 목표비율 리밸런싱 전략 v1
 - 작성 시각(KST): 2026-07-02
-- 마지막 갱신 시각(KST): 2026-07-02 (v4: 리밸런스 트리거=밴드 상시 감시 확정(하루1회 폐기, 기존 구현과 동일). v3: per-포트폴리오 할당금액 모델 확정 — target_weight=아이템 할당 내 주식비중, 아이템별 독립 리밸런싱, 종목간 현금혼용·순서 없음)
+- 마지막 갱신 시각(KST): 2026-07-02 (v5: 실행 케이던스(폴링 주기·병렬 worker·다중 core 인스턴스 팬-인·백프레셔)를 placeholder로 명시하고 실행/런타임 아키텍처 Discovery(dcy-002)로 분리. OQ-2 중 폴링 간격·세션 윈도우를 dcy-002로 이관. confirm-discovery Freeze 완료. v4: 리밸런스 트리거=밴드 상시 감시 확정(하루1회 폐기, 기존 구현과 동일). v3: per-포트폴리오 할당금액 모델 확정 — target_weight=아이템 할당 내 주식비중, 아이템별 독립 리밸런싱, 종목간 현금혼용·순서 없음)
 - 대체됨: 없음
-- 후속 Discovery 참조: 없음 (v2 = 목표비중 동적조절은 별도 Discovery 예정)
+- 후속 Discovery 참조: **dcy-002**(tvr-v1 실행/런타임 아키텍처 — 폴링 케이던스·병렬 worker·다중 core 인스턴스 tvr_v1 슬롯 팬-인·백프레셔; 본 문서 OQ-2의 폴링 간격·세션 윈도우 이관) · v2(목표비중 동적조절, 별도 Discovery 예정)
 - 생성된 REQ 참조: 없음
 
 # 1. 계획 상태 요약
@@ -58,6 +58,7 @@
 - **wire 전달 3곳 확장**: ①portfolio-hub `/v1/portfolios` 응답에 `strategy_name`+`strategy_params`(config 해석) 노출 ②trex-core 슬롯 row에 strategy 필드 전달(SnapshotStore 경유) + slots.req `strategy` 필터 ③데몬이 row의 target_weight 사용.
 - **프레임 확장(구조적)**: 현 template은 매수 전용(sell intent 미발신, 청산 core 위임). TVR은 자체 부분매도가 필요 → transport/intent_builder에 **sell-intent(부분매도) 경로 추가** + decision-cycle을 **리밸런싱형(매수/매도 분기)** 으로 확장.
 - **리밸런스 트리거(사장님 확정 2026-07-02): 밴드 트리거 상시 감시** — 하루 1회 스케줄이 아니라 **장중 폴링 주기(데몬 cycle)마다 드리프트를 감시하고, 밴드 초과 시 항상 리밸런싱**한다(기존 구현과 동일). 비용 통제는 밴드 폭+최소거래 임계가 담당. 리밸런싱 후 비중이 목표 중앙으로 복귀하므로 자연 히스테리시스 존재.
+	- **케이던스 범위 주(2026-07-02)**: 본 Discovery 소관은 트리거 **의미론**(매 사이클 드리프트 감시 → 밴드 초과 시 리밸런싱)뿐이다. 구체적 **폴링 주기·병렬 worker 처리·다중 core 인스턴스 tvr_v1 슬롯 팬-인·백프레셔**(유휴 시 60초 바닥, 처리 못 끝내면 무슬립 드레인)는 **단일 데몬·고정 폴링 placeholder**로 가정하며 실행/런타임 아키텍처 Discovery(**dcy-002**)에서 정련한다. 회전율은 밴드 폭이 지배하므로(위 문장) 폴링 주기의 dcy-002 이관은 본 Discovery의 밴드 시뮬 결과에 영향을 주지 않는다.
 
 ## 영향 범위
 
@@ -129,10 +130,11 @@
 	- 상태: Deferred
 	- 처리 방안: 설계 단계 경량 시뮬(6.5년 일봉)로 회전율·비용 곡선 산출 후 REQ에서 확정. 팀장 검수.
 	- 종료 조건: 설계 시뮬 결과로 밴드 종류·값이 REQ에 반영되면 Answered.
-- OQ-2: 최소거래 임계(dust 방지) 값 및 장중 폴링 간격(데몬 poll_interval — 상시 감시의 촘촘함).
+- OQ-2: 최소거래 임계(dust 방지, `min_trade_krw`) 값. **(전략 파라미터 — strategy_sets config, 본 Discovery 소관 유지)**
 	- 상태: Deferred
-	- 처리 방안: 설계 시뮬 + 인스턴스 운용 설계에서 확정. 밴드 트리거 상시 감시 전제(폴링 간격은 부하·시세 갱신 주기 고려).
-	- 종료 조건: REQ/인스턴스 설계에 값·시각 명시되면 Answered.
+	- 처리 방안: 설계 시뮬(밴드 시뮬)에서 확정.
+	- 종료 조건: REQ/설계에 값 명시되면 Answered.
+	- **분리·이관 주(2026-07-02)**: 기존 OQ-2에 묶였던 **장중 폴링 간격(`poll_interval`)·리밸런싱 허용 시간 창(세션 윈도우)** 은 처리량·병렬 worker·백프레셔와 결합된 실행 아키텍처 사안이므로 **dcy-002로 이관**한다(본 Discovery에서 Open 아님).
 - OQ-3: 초기 확립(아이템이 전량 cash로 시작) 시 한 번에 target까지 매수 vs 분할 진입 여부.
 	- 상태: Deferred
 	- 처리 방안: REQ/설계에서 정의. per-아이템 독립 모델이라 종목 간 순서 이슈는 소멸 — 아이템 내 진입 방식만 결정하면 됨.
@@ -163,10 +165,10 @@
 	- 기준: S-1~S-4 측정치(허용오차·회전율 목표)를 설계 시뮬 후 수치화.
 - [ ] High 영향 리스크 우선순위 및 해소 책임자 지정
 	- 기준: R-1(회전율/비용) 해소 책임=담당 dev(설계 시뮬), 검수=팀장.
-- [ ] 모든 오픈 질문(OQ) `Open` 상태 없음 확인
-	- 기준: OQ-1~3 전부 Deferred 처리 완료(설계/REQ 인계). Open 0개.
-- [ ] Freeze 확정 담당자(CONFIRMED_BY) 지정
-	- 기준: 사장님 confirm-discovery.
+- [x] 모든 오픈 질문(OQ) `Open` 상태 없음 확인
+	- 기준: OQ-1·3·4 Deferred(설계/REQ 인계), OQ-2는 dust 임계만 Deferred 유지·폴링 간격/세션 윈도우는 dcy-002 이관. Open 0개.
+- [x] Freeze 확정 담당자(CONFIRMED_BY) 지정
+	- 기준: 사장님(genichin) confirm-discovery (2026-07-02).
 
 # 9. 파일 처리 결과
 
@@ -183,7 +185,7 @@
 - (완료 2026-07-02) 목표비중 모델 = per-종목 목표비중. 리스크 = 순수 리밸런싱(손절 없음). v1은 고정목표, 동적조절은 v2.
 
 ## CONFIRM
-- 사장님 confirm-discovery로 본 범위 Freeze 승인.
+- (완료 2026-07-02) 사장님(genichin) confirm-discovery — 전략 의미론 범위 Freeze 승인. 실행 케이던스(폴링·병렬 worker·다중 인스턴스 팬-인)는 dcy-002로 분리.
 
 ## DATA
 - 없음(v1은 기존 가격데이터로 충분).
@@ -198,8 +200,8 @@
 - 사용자 결정 필요: [# 10. 사용자 결정 필요 항목 요약](#10-사용자-결정-필요-항목-요약)
 
 ## Freeze 플래그
-- Handoff Decision: 보류 (사장님 confirm-discovery 대기)
-- Handoff Rationale: 범위 핵심 결정은 완료됐으나, 성공지표 수치화·OQ의 설계 시뮬 인계가 REQ 착수 전 정리 필요. confirm-discovery 승인 시 REQ Drafting 진행.
-- Ready for REQ Drafting: false
-- Confirmed By: TBD
-- Confirmed At (KST): TBD
+- Handoff Decision: 승인 (confirm-discovery 완료 2026-07-02)
+- Handoff Rationale: 전략 의미론 범위(리밸런싱 모델·밴드 트리거 의미론·sell-intent 경로·설정 원천 portfolio-hub)를 확정. 실행 케이던스(폴링 주기·병렬 worker·다중 core 인스턴스 팬-인·백프레셔)는 placeholder로 명시하고 실행/런타임 아키텍처 Discovery(dcy-002)로 분리·이관. 성공지표 수치화·밴드 폭 값은 REQ/설계 시뮬에서 확정(설계 인계 사안, REQ 착수 차단 아님).
+- Ready for REQ Drafting: true
+- Confirmed By: 사장님(genichin) + 팀장
+- Confirmed At (KST): 2026-07-02
