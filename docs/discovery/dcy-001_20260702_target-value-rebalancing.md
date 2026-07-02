@@ -4,7 +4,7 @@
 - 문서 ID: dcy-001_20260702_target-value-rebalancing
 - 이슈명: target-value(constant-mix) 목표비율 리밸런싱 전략 v1
 - 작성 시각(KST): 2026-07-02
-- 마지막 갱신 시각(KST): 2026-07-02 (v2: 전략설정=portfolio-hub strategy_sets 확정, name="tvr_v1" 확정, slots strategy 필터 추가, A-1 갱신)
+- 마지막 갱신 시각(KST): 2026-07-02 (v3: per-포트폴리오 할당금액 모델 확정 — target_weight=아이템 할당 내 주식비중, 아이템별 독립 리밸런싱, 종목간 현금혼용·순서 없음)
 - 대체됨: 없음
 - 후속 Discovery 참조: 없음 (v2 = 목표비중 동적조절은 별도 Discovery 예정)
 - 생성된 REQ 참조: 없음
@@ -31,7 +31,7 @@
 	- TREX 라이브 전략은 단기 진입(ORB)·단기 청산(TSL)뿐. 장기 보유·비중 유지형 전략이 없다.
 	- M3에서 중장기 trex-core 인스턴스 토대는 깔렸으나, 그 위에 얹을 실전 장기전략이 없다.
 - 기대 상태
-	- 운영자가 **종목별 목표비중을 config로 지정**하면, 데몬이 그 비중을 향해 **자동으로 부분 매수/부분 매도 리밸런싱**을 수행해 목표 배분을 유지한다.
+	- 운영자가 **아이템별 목표비중을 portfolio-hub(strategy_sets)에 지정**하면, 데몬이 각 아이템 할당금액 내에서 그 비중을 향해 **자동으로 부분 매수/부분 매도 리밸런싱**을 수행해 목표를 유지한다.
 	- 목표비중 값 자체는 사람이 고정(자동 변경 없음). 목표를 지키는 실행만 자동.
 - 이해관계자
 	- 사장님(전략 방향·목표비중·리스크 스탠스 결정)
@@ -44,13 +44,13 @@
 
 ## 주요 사용자 시나리오
 
-- 운영자가 목표 포트폴리오(예: 005930=30%, 000660=20%, 035720=15%, cash=35%)를 config에 넣고 데몬을 기동한다 → 데몬이 초기 목표 배분으로 매수해 포트폴리오를 확립한다.
-- 특정 종목이 급등해 실제비중이 목표+밴드를 초과하면 → 데몬이 초과분을 자동 부분매도해 목표비중으로 되돌린다.
-- 특정 종목이 하락해 실제비중이 목표-밴드 미만이면 → 데몬이 자동 추가매수(물타기)해 목표비중으로 되돌린다.
+- 운영자가 portfolio-hub에서 포트폴리오 아이템(종목)마다 금액을 할당하고 tvr_v1 전략셋(target_weight 예: 0.70 = 주식70:현금30)을 바인딩한다 → 데몬이 각 아이템 할당 내에서 target_weight까지 매수해 포지션을 확립한다.
+- 특정 종목이 급등해 그 아이템의 주식비중이 target+밴드를 초과하면 → 데몬이 초과분을 자동 부분매도해 목표비중으로 되돌린다(매도대금은 그 아이템 현금으로).
+- 특정 종목이 하락해 그 아이템의 주식비중이 target−밴드 미만이면 → 데몬이 그 아이템 현금으로 자동 추가매수(물타기)해 목표비중으로 되돌린다.
 
 # 4. 이번에 정의할 변경
 
-- **신규 전략**: constant-mix 목표비율 리밸런서(`tvr_v1`). per-종목 목표비중 + 암묵 cash 목표(100%−Σtarget_weight)를 유지.
+- **신규 전략**: constant-mix 목표비율 리밸런서(`tvr_v1`). **per-포트폴리오(아이템) 모델(사장님 확정 2026-07-02)**: 포트폴리오 아이템마다 **할당금액**(= 그 아이템의 cash_balance + 주식가치)이 있고, **그 할당 내에서 주식:현금 비중을 target_weight로 유지**한다. cash 비중 = 1−target_weight(아이템별, 암묵). 종목별 완전 독립 리밸런싱 — 아이템 간 현금 혼용 없음.
 - **전략 설정의 단일 진실원천 = portfolio-hub `strategy_sets` (사장님 확정 2026-07-02)**: 목표비중 등 per-종목 파라미터는 데몬 config 파일이 아니라 **portfolio-hub DB에 저장**하고, 유니버스(슬롯) 수신 시 함께 전달받는다.
 	- **DB 확정 형태(기존 참조 모델 준수)**: `strategy_sets(name="tvr_v1", config='{"target_weight":0.30,"rebalance_band_pct":...,"min_trade_krw":...}' [JSON 문자열], nick="tvr_v1:<hash>")` ← (name,config) 유니크 — 비중 다른 종목은 전략셋 별도 발행. `portfolios.active_strategy_id`가 전략셋을 참조(per-포트폴리오=per-종목 바인딩), `managed_by_daemon_id`로 인스턴스 유니버스 스코핑.
 	- **`name="tvr_v1"` 확정** — 데몬 strategy_id·repo명과 1:1. 기존 DB의 `target_value` 행(config `{}`, 포트폴리오 2개 참조)은 레거시 — 처리 방식은 REQ에서 결정(마이그레이션 or 방치).
@@ -78,11 +78,11 @@
 # 5. 요구사항 목록
 
 ## 기능 요구사항
-- FR-1: **per-종목 목표비중은 portfolio-hub `strategy_sets`에 저장**한다 — `name="tvr_v1"`, `config`(JSON 문자열)에 `target_weight`(+밴드·최소거래 임계). 포트폴리오가 `active_strategy_id`로 참조. cash 목표 = 100%−Σtarget_weight(암묵).
+- FR-1: **per-종목 목표비중은 portfolio-hub `strategy_sets`에 저장**한다 — `name="tvr_v1"`, `config`(JSON 문자열)에 `target_weight`(+밴드·최소거래 임계). 포트폴리오가 `active_strategy_id`로 참조. **target_weight = 그 포트폴리오 아이템 할당금액(cash_balance+주식가치) 내 주식 비중**. cash 비중 = 1−target_weight(아이템별, 암묵).
 - FR-1b: portfolio-hub `/v1/portfolios` 응답이 포트폴리오별 `strategy_name`+`strategy_params`(config 해석)를 노출하고, trex-core가 이를 슬롯 row까지 전달한다.
-- FR-2: 데몬은 매 리밸런스 주기 스냅샷(`trex.slots.req`, **`strategy:"tvr_v1"` 필터**)으로 **자기 전략 슬롯만** + 현재 보유수량(브로커 정본)+cash+target_weight를 읽어 종목별 현재비중을 계산한다(look-ahead=0).
-- FR-3: 현재비중과 목표비중의 **드리프트가 밴드를 초과하는 종목만** 목표까지 조정한다(밴드 이내는 무거래 → 회전율·비용 억제).
-- FR-4: 조정은 **부분매도(SellIntent.qty)와 증액/신규 매수(BuyIntent)** 로 수행하며, 한 리밸런스 내에서 **초과분 매도 → 현금 확보 → 부족분 매수** 순서로 처리한다.
+- FR-2: 데몬은 매 리밸런스 주기 스냅샷(`trex.slots.req`, **`strategy:"tvr_v1"` 필터**)으로 **자기 전략 슬롯만** + 현재 보유수량(브로커 정본)+해당 아이템 cash_balance+target_weight를 읽어 **아이템별 현재 주식비중 = 주식가치/(주식가치+cash)** 를 계산한다(look-ahead=0).
+- FR-3: 현재비중과 목표비중의 **드리프트가 밴드를 초과하는 아이템만** 목표까지 조정한다(밴드 이내는 무거래 → 회전율·비용 억제).
+- FR-4: 조정은 **아이템별 독립**으로 수행한다 — 초과 시 부분매도(SellIntent.qty, 매도대금은 그 아이템 할당으로 귀속), 부족 시 그 아이템 cash 한도 내 증액매수(BuyIntent). **아이템 간 현금 혼용·순서 의존 없음.**
 - FR-5: 목표수량은 **whole-share 반올림**하고, **최소거래 임계** 미만의 미세조정은 생략한다(dust 거래 방지).
 - FR-6: in-flight 충돌(대상 슬롯 PENDING_* → `already_active` 거부) 시 다음 주기 재시도로 재수렴한다.
 - FR-7: 상태/헬스 관측(status/health snapshot: last_cycle_ts·last_status·의존성 상태 등)을 day-1부터 제공한다.
@@ -97,7 +97,7 @@
 - In Scope
 	- per-종목 **고정** 목표비중 리밸런싱(초기 확립 + 유지)
 	- 자체 부분매도 경로 신설(transport/engine 확장)
-	- 밴드 게이팅 · 일 1회 체크 · 매도우선 순서 · whole-share/최소거래 임계 · in-flight 재시도
+	- 밴드 게이팅 · 일 1회 체크 · 아이템별 독립 리밸런싱 · whole-share/최소거래 임계 · in-flight 재시도
 	- 관측성 day-1 · 장기 core 인스턴스 설정 · dcy-010 자격증명 연동
 - Out of Scope
 	- **목표비중을 기술지표·재무로 동적 자동조절** (→ v2, 별도 Discovery)
@@ -133,9 +133,9 @@
 	- 상태: Deferred
 	- 처리 방안: 설계 시뮬 + 인스턴스 운용 설계에서 확정. 장기 전략이므로 하루 1회 가정.
 	- 종료 조건: REQ/인스턴스 설계에 값·시각 명시되면 Answered.
-- OQ-3: 초기 포트폴리오 확립 시(전량 cash 시작) 신규 진입 순서·부분 확립 허용 여부.
+- OQ-3: 초기 확립(아이템이 전량 cash로 시작) 시 한 번에 target까지 매수 vs 분할 진입 여부.
 	- 상태: Deferred
-	- 처리 방안: REQ/설계에서 초기 확립 로직 정의(매수우선순위·캡 헤드룸). A-2 전제로 캡 충돌은 회피.
+	- 처리 방안: REQ/설계에서 정의. per-아이템 독립 모델이라 종목 간 순서 이슈는 소멸 — 아이템 내 진입 방식만 결정하면 됨.
 	- 종료 조건: REQ에 초기확립 규칙 명시되면 Answered.
 - OQ-4: 기존 DB 레거시 `target_value` 전략셋(config `{}`, 포트폴리오 2개 참조) 처리 — `tvr_v1` 셋으로 마이그레이션? 방치? 해당 포트폴리오 2개가 tvr 관리 대상인지 확인.
 	- 상태: Deferred
