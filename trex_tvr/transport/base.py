@@ -6,7 +6,7 @@ clients build on them.
 """
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Optional, Protocol, runtime_checkable
 
 _INTENT_STATUSES = ("admitted", "rejected")
 
@@ -41,6 +41,7 @@ class SlotPort(Protocol):
 @runtime_checkable
 class IntentPort(Protocol):
     def submit_buy(self, payload: dict) -> dict: ...
+    def submit_sell(self, payload: dict) -> dict: ...
 
 
 @runtime_checkable
@@ -61,16 +62,24 @@ def queue_name(base: str, instance_key: str) -> str:
 # --- Request builders -----------------------------------------------------------
 
 
-def build_slots_request(filter: str) -> dict:
+def build_slots_request(filter: str, *, strategy: Optional[str] = None) -> dict:
     """Build a `trex.slots.req` body (REL-006).
 
-    Carries only `{filter}` — `spy` is intentionally NOT sent so the server default
-    (`spy=false`) applies. A buy daemon only ever asks for buyable
-    (`status=inactive`) slots, so holding-slot watchdog control (spy) is irrelevant.
+    Carries `{filter}` and optionally `{strategy}` — `spy` is intentionally NOT sent
+    so the server default (`spy=false`) applies.
+
+    `strategy` is an additive extension for TVR: when supplied, trex-core filters slots
+    to those whose `active_strategy_id` matches the strategy name (e.g. "tvr_v1").
+    Older trex-core servers that do not support the `strategy` filter will ignore the
+    field and return all slots for the daemon's universe (tvr daemon handles this via
+    the missing_strategy_params fallback in the decision cycle).
     """
     if not isinstance(filter, str) or not filter:
         raise WireSchemaError(f"invalid slots filter {filter!r}; expected a non-empty string")
-    return {"filter": filter}
+    body: dict = {"filter": filter}
+    if strategy is not None:
+        body["strategy"] = strategy
+    return body
 
 
 # --- Response / event parsers (schema guards) -----------------------------------
@@ -123,6 +132,26 @@ def parse_slots_response(body: Any) -> dict:
 def parse_intent_response(body: Any) -> dict:
     """Validate + normalize an intent response (`admitted` | `rejected`)."""
     data = _require_dict(body, "intent response")
+    if "intent_id" not in data:
+        raise WireSchemaError("intent response missing 'intent_id'")
+    status = data.get("status")
+    if status not in _INTENT_STATUSES:
+        raise WireSchemaError(f"intent response status {status!r} not in {_INTENT_STATUSES}")
+    return {
+        "intent_id": data["intent_id"],
+        "status": status,
+        "slot_id": data.get("slot_id"),
+        "reason": data.get("reason"),
+    }
+
+
+def parse_sell_intent_response(body: Any) -> dict:
+    """Validate + normalize a sell intent response (`admitted` | `rejected`).
+
+    Shares the same schema as parse_intent_response but is a separate function
+    for clarity and future extensibility of sell-specific fields.
+    """
+    data = _require_dict(body, "sell intent response")
     if "intent_id" not in data:
         raise WireSchemaError("intent response missing 'intent_id'")
     status = data.get("status")

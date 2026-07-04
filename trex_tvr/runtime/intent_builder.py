@@ -24,12 +24,21 @@ from __future__ import annotations
 
 from typing import Optional
 
-from trex_tvr.strategies.base import BuySignal
+from trex_tvr.strategies.base import BuySignal, SellSignal
 
 
 def make_intent_id(strategy_id: str, trading_date: str, slot_id: str) -> str:
     """Deterministic idempotency key — one buy admission per slot per trading day."""
     return f"{strategy_id}:{trading_date}:{slot_id}"
+
+
+def make_sell_intent_id(strategy_id: str, trading_date: str, slot_id: str) -> str:
+    """Deterministic sell idempotency key — `sell:` namespace separates from buy keys.
+
+    Sell intent_id rule: `sell:{strategy_id}:{trading_date}:{slot_id}`.
+    One sell admission per slot per trading day via trex-core dedup.
+    """
+    return f"sell:{strategy_id}:{trading_date}:{slot_id}"
 
 
 def build_buy_intent(
@@ -77,3 +86,37 @@ def build_buy_intent(
     if sell_strategy_id is not None:
         payload["sell_strategy_id"] = sell_strategy_id
     return payload
+
+
+def build_sell_intent(
+    signal: SellSignal,
+    *,
+    trading_date: str,
+    slot_id: str,
+    strategy_id: str,
+) -> dict:
+    """Map a SellSignal into a sell intent payload for trex-core.
+
+    Sell intent fields (trex-core SellIntent wire contract):
+      intent_type       "sell"
+      intent_id         sell:{strategy_id}:{trading_date}:{slot_id}  (멱등 키)
+      slot_id           slot to partially sell
+      qty               partial sell quantity (> 0)
+      reason            sell reason (e.g. "rebalance_sell")
+      sell_strategy_id  strategy that emitted this sell
+
+    stop_loss_price / take_profit_price / forced_close_at are intentionally absent —
+    TVR is a pure rebalancing strategy; exit thresholds are not declared on sell intents.
+    """
+    if not slot_id:
+        raise ValueError("slot_id is required for a sell intent")
+    if not isinstance(signal.qty, int) or signal.qty <= 0:
+        raise ValueError(f"sell intent qty must be a positive int (got {signal.qty!r})")
+    return {
+        "intent_type": "sell",
+        "intent_id": make_sell_intent_id(strategy_id, trading_date, slot_id),
+        "slot_id": slot_id,
+        "qty": int(signal.qty),
+        "reason": signal.reason,
+        "sell_strategy_id": strategy_id,
+    }

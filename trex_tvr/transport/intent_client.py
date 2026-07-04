@@ -12,6 +12,7 @@ import json
 from trex_tvr.transport.base import (
     WireSchemaError,
     parse_intent_response,
+    parse_sell_intent_response,
     queue_name,
 )
 from trex_tvr.transport.connection import PikaConnection
@@ -42,3 +43,23 @@ class PikaIntentClient:
             delivery_mode=_DELIVERY_MODE_PERSISTENT,
         )
         return parse_intent_response(json.loads(raw))
+
+    def submit_sell(self, payload: dict) -> dict:
+        """Submit a sell intent RPC to trex-core.
+
+        Uses the same routing key as buy (`trex.intent.req.<instance_key>`).
+        trex-core dispatches buy vs sell by the `intent_type` field in the payload.
+        The idempotency key (`intent_id`) is deterministic per (strategy_id, trading_date, slot_id)
+        with a `sell:` namespace prefix to avoid collision with buy keys.
+        """
+        intent_id = payload.get("intent_id")
+        if not intent_id:
+            raise WireSchemaError("sell intent payload missing 'intent_id' (idempotency key)")
+        raw = self._conn.rpc_call(
+            self._routing_key,
+            json.dumps(payload).encode("utf-8"),
+            correlation_id=str(intent_id),
+            timeout=self._rpc_timeout,
+            delivery_mode=_DELIVERY_MODE_PERSISTENT,
+        )
+        return parse_sell_intent_response(json.loads(raw))
