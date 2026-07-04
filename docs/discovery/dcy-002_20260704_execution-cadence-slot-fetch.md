@@ -4,7 +4,7 @@
 - 문서 ID: dcy-002_20260704_execution-cadence-slot-fetch
 - 이슈명: tvr 실행 케이던스·슬롯 패치 아키텍처 (세션 윈도우·폴링·팬-인·백프레셔)
 - 작성 시각(KST): 2026-07-04
-- 마지막 갱신 시각(KST): 2026-07-04 (v2: OQ-1/2 Answered — KIS NXT 스펙 조사 반영, OQ-4 VTS 실측 신설, NXT 선정종목 제한 발견)
+- 마지막 갱신 시각(KST): 2026-07-04 (v3: FR-8 슬롯별 시장 적격성 게이트 — assets.markets 재활용(사장님 제안). v2: OQ-1/2 Answered — KIS NXT 스펙 조사 반영, OQ-4 VTS 실측 신설, NXT 선정종목 제한 발견)
 - 대체됨: 없음
 - 후속 Discovery 참조: 없음
 - 생성된 REQ 참조: 없음
@@ -76,6 +76,7 @@
 - FR-5: 멱등 intent_id에 인스턴스 식별 포함(중복·오라우팅 방지).
 - FR-6 (trex-core, 별도 REQ): KIS 주문 거래소구분(NXT/SOR) 지원.
 - FR-7 (kdh, 별도 REQ): 연장세션(NXT 포함) 현재가 제공.
+- FR-8 (사장님 제안 2026-07-04): **슬롯별 시장 적격성 게이트** — portfolio-hub `assets.markets`(기존 컬럼, 현재 전부 미사용 `[]`)를 거래 가능 시장 목록으로 정의(`["KRX","NXT"]` / `["KRX"]` / `[]`=보수 해석 KRX only). `/v1/portfolios` 응답에 asset 조인으로 `markets` 노출(strategy_params와 같은 additive 확장에 피기백) → trex-core 슬롯 row 전달 → tvr이 NXT 전용 세션(프리/애프터)에서 `"NXT" ∈ markets`인 슬롯만 리밸런싱, 아니면 평가만·intent 보류(다음 KRX 세션 재수렴). 유지보수: 운영이 /v1/assets admin API로 수동 세팅(초기), NXT 목록 자동 동기화는 백로그.
 
 ## 비기능 요구사항
 - NFR-1: 연장세션 체결 품질 — 유동성 얇은 구간 보호장치(예: 최소 유동성/스프레드 가드 또는 지정가 폭 제한)를 설계에서 검토.
