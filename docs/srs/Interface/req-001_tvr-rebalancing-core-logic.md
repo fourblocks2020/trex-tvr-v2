@@ -1,6 +1,6 @@
 # req-001: TVR v1 리밸런싱 평가 코어 로직
 
-- Status: Approved
+- Status: Implemented
 - Type: Interface
 - Priority: High
 - Owner: service-dev (tvr)
@@ -51,6 +51,24 @@
 - NFR-2(시임 규칙)·NFR-3(결정성)은 AC-9·AC-10으로 본 REQ에 흡수. 별도 NFR REQ 미승격.
 
 ## Change Log
+
+### CHG-20260704-04
+- Date: 2026-07-04
+- Author: 팀장(Claude) — confirm-req-implemented
+
+#### Change Summary
+- Approved → **Implemented**: bat-001 구현 완료. 독립 QC PASS-WITH-NOTES(blocker 0, MAJOR 1건 수정 반영: REQ-003 AC-1 strategy 필터 wire 전달), 88 passed. PR #1 사장님 결재·머지(1eeac8d, 2026-07-04) = confirm-batch-verification 완료.
+- 검증 범위: fixture 기반 단독 검증. e2e(trex-core slots strategy 필터·portfolio-hub strategy_params 노출)는 타 repo REQ 배포 후 별도 확인.
+
+#### Acceptance Criteria Delta
+- Added/Updated/Removed: 없음
+
+#### Delivery Trace Delta
+- Batches: bat-001_20260704_tvr-rebalancing-v1 (merged, PR #1)
+
+#### Revalidation Impact
+- Reverification Needed: no / Existing Implementation Invalidated: no
+- Status Recommendation: Implemented
 
 ### CHG-20260704-03
 - Date: 2026-07-04

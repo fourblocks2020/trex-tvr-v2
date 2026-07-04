@@ -9,28 +9,28 @@
 2. 초안 작성은 `draft-req`, 승인 전환은 `confirm-req`, 변경 대응은 `change-req`, 구현 완료 전환은 `confirm-req-implemented` skill을 기준으로 수행한다.
 3. 작성 또는 수정 후 누락과 모호성을 점검한다.
 4. requirement 추가 또는 변경 후 `Next Requirement ID`, `Requirement Register`, `Recent Change Log Summary`를 함께 갱신한다.
-5. `Approved` requirement를 승인하려면 승인 준비 상태와 blocker를 점검한다.
-6. `Approved` requirement는 구현 이슈나 작업 항목으로 연결한다.
+5. `Implemented` requirement를 승인하려면 승인 준비 상태와 blocker를 점검한다.
+6. `Implemented` requirement는 구현 이슈나 작업 항목으로 연결한다.
 7. 구현과 검증이 끝난 requirement는 `confirm-req-implemented` skill로 완료 전환 가능 여부를 점검한다.
 8. requirement 변경 시 `change-req` skill을 기준으로 해당 REQ 파일의 `Change Log`를 먼저 갱신한 뒤 본문을 수정한다.
 9. 구현 전에는 관련 REQ 파일과 최근 `Change Log`를 기준으로 변경 범위를 판단한다.
 
 ## 상태 정의
-- Approved: 초안 상태이며 구현 기준으로 확정되지 않음
-- Approved: 구현 기준으로 승인됨
+- Implemented: 초안 상태이며 구현 기준으로 확정되지 않음
+- Implemented: 구현 기준으로 승인됨
 - Implemented: 구현과 검증이 완료됨
 - Deprecated: 더 이상 유지하지 않음
 
 ## Status Transition Evidence
 
-### Approved -> Approved
+### Implemented -> Implemented
 - `Status`, `Type`, `Priority`, `Owner`, `Intent`, `Requirement`, `Acceptance Criteria`, `Impacted Area`, `Change Log`가 모두 존재해야 한다.
 - `Type`은 아래 분류 도표에서 정확하게 하나로 지정되어야 한다.
 - `Acceptance Criteria`는 구현 판단에 사용할 수 있을 정도로 구체적이어야 한다.
 - 미해결 assumption 또는 open question이 있으면 `Notes`에 명시하고, 승인 blocker 여부를 판단해야 한다.
 - 승인 전환 시 해당 REQ 파일의 `Change Log`에 status 변경 사유를 기록해야 한다.
 
-### Approved -> Implemented
+### Implemented -> Implemented
 - 각 `Acceptance Criteria`에 대해 test, manual verification, 또는 구현 결과 중 최소 1개의 evidence가 있어야 한다.
 - evidence는 requirement 문서 자체 또는 연결된 구현/검증 결과에서 추적 가능해야 한다.
 - 미충족 `Acceptance Criteria`가 있으면 `Implemented`로 전환하지 않는다.
@@ -40,8 +40,8 @@
 ### Requirement Change Handling
 - 기존 REQ 본문(`Requirement`, `Acceptance Criteria`, `Impacted Area`)을 수정하기 전에는 새 `Change Log` 항목을 만든다.
 - `Change Log`에는 최소한 `Acceptance Criteria Delta`, `Impacted Area Delta`, `Delivery Trace Delta`, `Revalidation Impact`, `Validation Plan`이 포함되어야 한다.
-- 변경이 기존 구현 또는 verification evidence를 무효화하면 `Implemented` requirement는 `Approved`로 되돌린다.
-- 변경이 승인 전제 자체를 다시 검토하게 만들면 `Approved` 또는 `Implemented` requirement를 `Approved`로 되돌릴 수 있다.
+- 변경이 기존 구현 또는 verification evidence를 무효화하면 `Implemented` requirement는 `Implemented`로 되돌린다.
+- 변경이 승인 전제 자체를 다시 검토하게 만들면 `Implemented` 또는 `Implemented` requirement를 `Implemented`로 되돌릴 수 있다.
 - 상태 되돌림이 발생하면 `Requirement Register`와 `Recent Change Log Summary`도 함께 갱신한다.
 
 ## Requirement 타입 분류 도표
@@ -81,11 +81,11 @@
 
 | ID | Title | Type | Status | Priority | Owner | Link |
 | --- | --- | --- | --- | --- | --- | --- |
-| REQ-001 | TVR v1 리밸런싱 평가 코어 로직 | Interface | Approved | High | service-dev (tvr) | [req-001](Interface/req-001_tvr-rebalancing-core-logic.md) |
-| REQ-002 | TVR sell-intent 경로 신설 | Interface | Approved | High | service-dev (tvr) | [req-002](Interface/req-002_tvr-sell-intent-transport.md) |
-| REQ-003 | TVR decision-cycle 리밸런싱형 확장 + slots strategy 필터 | Integration | Approved | High | service-dev (tvr) | [req-003](Integration/req-003_tvr-decision-cycle-rebalancing.md) |
-| REQ-004 | TVR status/health 관측성 day-1 | Non-Functional | Approved | Medium | service-dev (tvr) | [req-004](Non-Functional/req-004_tvr-observability-day1.md) |
+| REQ-001 | TVR v1 리밸런싱 평가 코어 로직 | Interface | Implemented | High | service-dev (tvr) | [req-001](Interface/req-001_tvr-rebalancing-core-logic.md) |
+| REQ-002 | TVR sell-intent 경로 신설 | Interface | Implemented | High | service-dev (tvr) | [req-002](Interface/req-002_tvr-sell-intent-transport.md) |
+| REQ-003 | TVR decision-cycle 리밸런싱형 확장 + slots strategy 필터 | Integration | Implemented | High | service-dev (tvr) | [req-003](Integration/req-003_tvr-decision-cycle-rebalancing.md) |
+| REQ-004 | TVR status/health 관측성 day-1 | Non-Functional | Implemented | Medium | service-dev (tvr) | [req-004](Non-Functional/req-004_tvr-observability-day1.md) |
 
 ## Recent Change Log Summary
 
-- 2026-07-04: REQ-001~004 최초 생성 (dcy-001 confirmed Discovery 기반, Status: Approved)
+- 2026-07-04: REQ-001~004 최초 생성 (dcy-001 confirmed Discovery 기반, Status: Implemented)
