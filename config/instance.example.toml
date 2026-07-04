@@ -1,30 +1,32 @@
-# Per-instance configuration (strategy + identity only).
-# Start the daemon by NAME:  trex-tvr --config instance.example
+# Per-instance configuration (TVR runtime settings + identity).
+# Start the daemon:   trex-tvr run --config instance.example
+# Check status:       trex-tvr status
 # Shared infra + secrets live in .env (NOT here) — see config/.env.example.
 
-instance_key = "default"
+instance_key = "tvr-default"
 poll_interval_seconds = 30
 rpc_timeout_seconds = 5
 worker_count = 20
-
-# Slot sizing: KRW allocated per buy (top-level, not under [strategy]).
-entry_capital_krw = 1000000
 
 # Schedule windows are KST "HH:MM", half-open [start, end). Cycle runs only inside.
 [[schedule]]
 start = "09:15"
 end = "15:20"
 
-# Exactly ONE [strategy.<id>] table — its key is the strategy_id and MUST match the
-# id you register in strategies/registry.py and the events queue name.
-# TODO(설계): TVR 파라미터 확정 시 min_price를 target_weight/rebalance_threshold 등으로 교체.
+# [strategy.tvr_v1]: TVR에는 런타임 설정만 — 리밸런싱 파라미터(target_weight,
+# rebalance_band_pct, min_trade_krw)는 portfolio-hub strategy_sets에서 관리하고
+# trex-core 슬롯 row로 데몬에 전달된다. 이 테이블은 비워 두거나 런타임 힌트만 넣는다.
 [strategy.tvr_v1]
-min_price = 1000
+# 운영 파라미터 예시 (실제 값은 portfolio-hub strategy_sets에서 per-slot 전달):
+# target_weight = 0.70        # (portfolio-hub 소관 — 여기서 설정 금지)
+# rebalance_band_pct = 5.0    # (portfolio-hub 소관 — 여기서 설정 금지)
+# min_trade_krw = 10000        # (portfolio-hub 소관 — 여기서 설정 금지)
 
-# Exit thresholds → declared on the buy intent; trex-core's safety-sell enforces them.
-[exit]
-stop_loss_pct = 2.0
-take_profit_pct = 4.0
+# [exit] 섹션은 TVR에서 불필요 (순수 리밸런싱, SL/TP 미선언).
+# ORB/TSL 전략 데몬에서는 아래와 같이 선언한다:
+# [exit]
+# stop_loss_pct = 2.0
+# take_profit_pct = 4.0
 
 # Optional execution policy (omit the whole section to keep core defaults).
 [execution]

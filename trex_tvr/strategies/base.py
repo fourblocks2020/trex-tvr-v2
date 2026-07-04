@@ -1,8 +1,9 @@
 """BuyStrategy ABC + output dataclasses.
 
 Ported from trex-orbit `app/strategies/buy/base.py`. `BuyStrategy.evaluate()`
-returns one of `BuySignal | HoldDecision | Diagnostic`:
+returns one of `BuySignal | SellSignal | HoldDecision | Diagnostic`:
   - BuySignal   -> emit a buy intent (short-circuits this asset).
+  - SellSignal  -> emit a sell intent (partial rebalancing sell).
   - HoldDecision-> no decision; move to the next asset.
   - Diagnostic  -> input cannot be trusted; audit and move on.
 
@@ -39,8 +40,24 @@ class BuySignal:
 
 
 @dataclass
+class SellSignal:
+    """Strategy decided to partially sell this asset (rebalancing sell).
+
+    `qty` is the partial sell quantity. This signal drives a sell intent via
+    the transport layer — it is NOT a full exit. trex-core keeps the slot HOLDING
+    after a partial fill.
+    """
+
+    symbol: str
+    slot_id: str
+    qty: int
+    reason: str
+    strategy_id: str
+
+
+@dataclass
 class HoldDecision:
-    """Strategy produced no buy decision. Move to the next asset/strategy."""
+    """Strategy produced no buy/sell decision. Move to the next asset/strategy."""
 
     symbol: str
     reason: str
@@ -58,7 +75,7 @@ class Diagnostic:
 
 
 # Type alias for the evaluate() return value.
-BuyEvaluation = Union[BuySignal, HoldDecision, Diagnostic]
+BuyEvaluation = Union[BuySignal, SellSignal, HoldDecision, Diagnostic]
 
 
 class BuyStrategy(ABC):

@@ -4,7 +4,7 @@ Validation is fail-closed: any missing/invalid required key raises `ConfigError`
 and the daemon refuses to start.
 
 Config model (12-factor):
-  - TOML  : instance_key, schedule, [strategy], [exit], poll/rpc tuning, [cache]
+  - TOML  : instance_key, schedule, [strategy], [exit](optional for TVR), poll/rpc tuning, [cache]
   - env/.env (shared infra + secrets; env wins over TOML when both present):
       TREX_RABBITMQ_URL        -> rabbitmq_url
       KIS_DATA_HUB_BASE_URL    -> kis_data_hub.base_url
@@ -16,6 +16,10 @@ Config model (12-factor):
 directory: an explicit `--env-file` wins, otherwise `<config_dir>/.env` next to
 the TOML is used. Real OS environment variables always take precedence over the
 `.env` file (`override=False`). python-dotenv missing or no `.env` => no-op.
+
+BAT-001: entry_capital_krw removed (TVR uses target_weight from strategy_params, not fixed KRW).
+BAT-001: [exit] is now optional — TVR is a pure rebalancing strategy and does not declare exit
+thresholds on buy intents. Other strategies that need SL/TP still provide [exit].
 """
 from __future__ import annotations
 
@@ -84,9 +88,9 @@ class Config:
     rabbitmq_url: str
     kis_data_hub: KisDataHubConfig
     schedule: list[ScheduleEntry]
-    exit: ExitConfig
     strategy_id: str
-    entry_capital_krw: int = 0
+    # [exit] is optional: TVR (pure rebalancing) omits it; ORB/TSL-style strategies supply it.
+    exit: Optional[ExitConfig] = None
     strategy_params: dict[str, dict[str, Any]] = field(default_factory=dict)
     execution: ExecutionConfig = ExecutionConfig()
     poll_interval_seconds: float = 30.0
@@ -213,16 +217,19 @@ def _from_mapping(raw: dict) -> Config:
 
     schedule = _parse_schedule(raw.get("schedule"))
 
+    # [exit] is optional — TVR (pure rebalancing) omits it; ORB/TSL-style strategies supply it.
     exit_raw = raw.get("exit")
-    if not isinstance(exit_raw, dict):
-        raise ConfigError("missing required config table: [exit]")
-    try:
-        exit_cfg = ExitConfig(
-            stop_loss_pct=float(_require(exit_raw, "stop_loss_pct", "exit.")),
-            take_profit_pct=float(_require(exit_raw, "take_profit_pct", "exit.")),
-        )
-    except (TypeError, ValueError) as exc:
-        raise ConfigError(f"exit pct values must be numeric: {exc}") from exc
+    exit_cfg: Optional[ExitConfig] = None
+    if exit_raw is not None:
+        if not isinstance(exit_raw, dict):
+            raise ConfigError("[exit] must be a table when present")
+        try:
+            exit_cfg = ExitConfig(
+                stop_loss_pct=float(_require(exit_raw, "stop_loss_pct", "exit.")),
+                take_profit_pct=float(_require(exit_raw, "take_profit_pct", "exit.")),
+            )
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"exit pct values must be numeric: {exc}") from exc
 
     execution_cfg = _parse_execution(raw.get("execution"))
 
@@ -250,11 +257,6 @@ def _from_mapping(raw: dict) -> Config:
     if worker_count < 1:
         raise ConfigError("worker_count must be >= 1")
 
-    try:
-        entry_capital_krw = int(raw.get("entry_capital_krw", 0))
-    except (TypeError, ValueError) as exc:
-        raise ConfigError(f"entry_capital_krw must be an integer: {exc}") from exc
-
     return Config(
         instance_key=str(raw.get("instance_key", "default")),
         rabbitmq_url=str(rabbitmq_url),
@@ -262,7 +264,6 @@ def _from_mapping(raw: dict) -> Config:
         schedule=schedule,
         exit=exit_cfg,
         strategy_id=str(strategy_id),
-        entry_capital_krw=entry_capital_krw,
         strategy_params=dict(strat_raw),
         execution=execution_cfg,
         poll_interval_seconds=float(raw.get("poll_interval_seconds", 30.0)),

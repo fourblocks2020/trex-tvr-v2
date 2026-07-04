@@ -17,7 +17,7 @@ from datetime import datetime, time
 from typing import Any
 
 from trex_tvr.strategies.base import BuyStrategy
-from trex_tvr.strategies.example_strategy import TvrStrategy
+from trex_tvr.strategies.tvr_strategy import TvrStrategy
 
 # strategy_id -> (class, default_kwargs)
 _BUY_STRATEGIES: dict[str, tuple[type[BuyStrategy], dict[str, Any]]] = {}

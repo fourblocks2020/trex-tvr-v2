@@ -8,3 +8,4 @@
 
 | BAT ID | Profile | Status | Included REQ | Discovery | Folder |
 | --- | --- | --- | --- | --- | --- |
+| BAT-001 | standard | in-delivery | REQ-001, REQ-002, REQ-003, REQ-004 | dcy-001 | [bat-001_20260704_tvr-rebalancing-v1](./bat-001_20260704_tvr-rebalancing-v1/) |

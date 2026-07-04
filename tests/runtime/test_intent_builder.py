@@ -1,0 +1,116 @@
+"""REQ-002 transport sell-intent 경로 단위 테스트.
+
+Tests:
+  - build_sell_intent() 필드 구조 + 멱등 intent_id
+  - parse_sell_intent_response()
+  - IntentPort Protocol (submit_buy + submit_sell)
+  - qty 유효성 검사
+"""
+from __future__ import annotations
+
+import pytest
+
+from trex_tvr.strategies.base import SellSignal
+from trex_tvr.runtime.intent_builder import build_sell_intent, make_sell_intent_id
+from trex_tvr.transport.base import IntentPort, WireSchemaError, parse_sell_intent_response
+
+
+# ---------------------------------------------------------------------------
+# AC-REQ002-1: build_sell_intent 필드 구조 + 금지 필드 없음
+# ---------------------------------------------------------------------------
+def test_ac1_build_sell_intent_fields():
+    """AC-REQ002-1: SellSignal → dict with correct fields, no stop_loss/take_profit."""
+    signal = SellSignal(symbol="005930", slot_id="slot-abc", qty=4,
+                        reason="rebalance_sell", strategy_id="tvr_v1")
+    payload = build_sell_intent(signal, trading_date="2026-07-04",
+                                slot_id="slot-abc", strategy_id="tvr_v1")
+
+    assert payload["intent_type"] == "sell"
+    assert payload["intent_id"] == "sell:tvr_v1:2026-07-04:slot-abc"
+    assert payload["slot_id"] == "slot-abc"
+    assert payload["qty"] == 4
+    assert payload["reason"] == "rebalance_sell"
+    assert payload["sell_strategy_id"] == "tvr_v1"
+    # No exit fields (REQ-002: stop_loss_price / take_profit_price / forced_close_at absent)
+    assert "stop_loss_price" not in payload
+    assert "take_profit_price" not in payload
+    assert "forced_close_at" not in payload
+
+
+# ---------------------------------------------------------------------------
+# AC-REQ002-2: 멱등 — 동일 입력 2회 호출 → 동일 intent_id
+# ---------------------------------------------------------------------------
+def test_ac2_sell_intent_id_idempotent():
+    """AC-REQ002-2: 동일 (strategy_id, trading_date, slot_id) → 동일 intent_id."""
+    signal = SellSignal(symbol="005930", slot_id="slot-abc", qty=4,
+                        reason="rebalance_sell", strategy_id="tvr_v1")
+    id1 = build_sell_intent(signal, trading_date="2026-07-04",
+                            slot_id="slot-abc", strategy_id="tvr_v1")["intent_id"]
+    id2 = build_sell_intent(signal, trading_date="2026-07-04",
+                            slot_id="slot-abc", strategy_id="tvr_v1")["intent_id"]
+    assert id1 == id2 == "sell:tvr_v1:2026-07-04:slot-abc"
+
+
+# ---------------------------------------------------------------------------
+# AC-REQ002-3: IntentPort Protocol — submit_buy + submit_sell 모두 구현
+# ---------------------------------------------------------------------------
+def test_ac3_intent_port_protocol_stub():
+    """AC-REQ002-3/4: stub IntentPort with submit_buy + submit_sell passes isinstance check."""
+    from tests.conftest import StubIntentPort
+
+    client = StubIntentPort({"status": "admitted", "intent_id": "x"})
+    assert isinstance(client, IntentPort)
+
+
+# ---------------------------------------------------------------------------
+# AC-REQ002-5: parse_sell_intent_response 정상 케이스
+# ---------------------------------------------------------------------------
+def test_ac5_parse_sell_response_ok():
+    """AC-REQ002-5: valid sell response → normalized dict."""
+    result = parse_sell_intent_response(
+        {"intent_id": "x", "status": "admitted", "slot_id": "s1"}
+    )
+    assert result["intent_id"] == "x"
+    assert result["status"] == "admitted"
+    assert result["slot_id"] == "s1"
+    assert result["reason"] is None
+
+
+# ---------------------------------------------------------------------------
+# AC-REQ002-6: parse_sell_intent_response — intent_id 없으면 WireSchemaError
+# ---------------------------------------------------------------------------
+def test_ac6_parse_sell_response_missing_intent_id():
+    """AC-REQ002-6: sell response without intent_id → WireSchemaError."""
+    with pytest.raises(WireSchemaError):
+        parse_sell_intent_response({"status": "admitted"})
+
+
+# ---------------------------------------------------------------------------
+# AC-REQ002-8: qty <= 0 → ValueError
+# ---------------------------------------------------------------------------
+def test_ac8_build_sell_intent_invalid_qty():
+    """AC-REQ002-8: qty=0 → ValueError."""
+    signal = SellSignal(symbol="005930", slot_id="slot-1", qty=0,
+                        reason="rebalance_sell", strategy_id="tvr_v1")
+    with pytest.raises(ValueError, match="qty"):
+        build_sell_intent(signal, trading_date="2026-07-04",
+                          slot_id="slot-1", strategy_id="tvr_v1")
+
+
+def test_ac8_build_sell_intent_negative_qty():
+    """AC-REQ002-8: qty=-1 → ValueError."""
+    signal = SellSignal(symbol="005930", slot_id="slot-1", qty=-1,
+                        reason="rebalance_sell", strategy_id="tvr_v1")
+    with pytest.raises(ValueError, match="qty"):
+        build_sell_intent(signal, trading_date="2026-07-04",
+                          slot_id="slot-1", strategy_id="tvr_v1")
+
+
+# ---------------------------------------------------------------------------
+# make_sell_intent_id: namespace prefix test
+# ---------------------------------------------------------------------------
+def test_sell_intent_id_namespace_prefix():
+    """sell: prefix separates from buy intent_id namespace."""
+    sell_id = make_sell_intent_id("tvr_v1", "2026-07-04", "slot-1")
+    assert sell_id.startswith("sell:")
+    assert sell_id == "sell:tvr_v1:2026-07-04:slot-1"

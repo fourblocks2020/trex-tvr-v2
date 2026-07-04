@@ -1,18 +1,21 @@
-"""Strategy entry daemon — fan-out decision cycle + reconnect + startup (reusable engine).
+"""Strategy daemon — rebalancing decision cycle + reconnect + startup (reusable engine).
 
-This is the template's orchestration engine — it is strategy-agnostic. It selects the
-single configured strategy from the registry and runs it; do NOT put strategy logic here.
+BAT-001 changes (TVR rebalancing expansion):
+  - run_decision_cycle(): inactive + holding slots evaluated; BuySignal + SellSignal dispatched.
+  - slots request: strategy="tvr_v1" filter added (build_slots_request extension).
+  - strategy_params from slot row: missing → Diagnostic(missing_strategy_params), skip.
+  - entry_capital removed: TVR uses target_weight from strategy_params, not fixed KRW.
+  - [exit] config is now optional: TVR buy intents have no stop_loss/take_profit.
+  - sell reentry guard: sell is re-evaluated every cycle (buy _admitted_slots guard intact).
+  - already_active: diagnostics recorded, next cycle re-convergence (no retry, no exception).
+  - StatusSnapshot (REQ-004): written atomically after each cycle and on transport error.
 
 The decision cycle uses a 2-phase fan-out:
-  Phase 1 (fan-out)   : ThreadPoolExecutor workers fetch market data + evaluate strategy
+  Phase 1 (fan-out)   : ThreadPoolExecutor workers fetch current price + evaluate strategy
                         per eligible slot row. Transport is never touched in workers
                         (pika BlockingConnection thread-safety constraint).
-  Phase 2 (serial)    : BuySignal results are submitted as buy intents on the main
+  Phase 2 (serial)    : BuySignal / SellSignal results are submitted as intents on the main
                         thread in slots[] response order (deterministic).
-
-Cycle elapsed time is measured from eligibility-filter completion to last intent
-submission and emitted as `cycle_elapsed_ms` in the result dict. A WARN is logged
-when elapsed > poll_interval_seconds.
 
 run_forever catches TransportUnavailableError/RpcTimeoutError and reconnects with
 exponential backoff (1s→2s→…→30s cap) instead of exiting.
@@ -30,14 +33,23 @@ from typing import Any, Callable, Optional
 
 from trex_tvr.market_data.kis_data_hub_client import KisDataHubClient, KisDataHubClientError
 from trex_tvr.runtime.config import Config, load_config
-from trex_tvr.runtime.intent_builder import build_buy_intent
+from trex_tvr.runtime.intent_builder import build_buy_intent, build_sell_intent
+from trex_tvr.runtime.status import DepsStatus, StatusSnapshot, write_snapshot
 from trex_tvr.strategies import registry
-from trex_tvr.strategies.base import BuySignal, Diagnostic
-from trex_tvr.transport.base import EventsPort, IntentPort, RpcTimeoutError, SlotPort, TransportUnavailableError
+from trex_tvr.strategies.base import BuySignal, Diagnostic, SellSignal
+from trex_tvr.transport.base import (
+    EventsPort,
+    IntentPort,
+    RpcTimeoutError,
+    SlotPort,
+    TransportUnavailableError,
+)
 
 _KST = timezone(timedelta(hours=9))
 
 logger = logging.getLogger("trex_tvr")
+
+_ELIGIBLE_STATUSES = {"inactive", "holding"}
 
 
 class StartupError(Exception):
@@ -60,25 +72,27 @@ def _eval_slot_work(
     market_data_client: Any,
     now: datetime,
 ) -> tuple[dict, Any]:
-    """Fan-out worker: fetch market data + evaluate strategy for one slot (Phase 1).
+    """Fan-out worker: fetch current price + evaluate strategy for one slot (Phase 1).
 
     Returns (eval_asset, decision) where decision is one of:
-      BuySignal | HoldDecision | Diagnostic | KisDataHubClientError
+      BuySignal | SellSignal | HoldDecision | Diagnostic | KisDataHubClientError
 
     Transport objects are never accessed here — pika BlockingConnection is
     thread-unsafe (architectural invariant).
     """
     code = eval_asset["symbol"]
     try:
+        # TVR uses current_price only (candle_count=0); candles are unused.
         market_data = market_data_client.fetch_market_data(
             code,
             now_kst=now,
-            # candle_count is the documented BuyStrategy attr (default 400); getattr
-            # keeps duck-typed strategies that omit it working.
-            candle_count=getattr(strategy, "candle_count", 400),
+            candle_count=getattr(strategy, "candle_count", 0),
         )
     except KisDataHubClientError as exc:
         return eval_asset, exc
+    # Inject current_price into eval_asset so strategy.evaluate() can read it
+    # directly from asset (no separate market_data lookup in pure function).
+    eval_asset = {**eval_asset, "current_price": market_data.get("current_price")}
     return eval_asset, strategy.evaluate(eval_asset, slots_resp, market_data)
 
 
@@ -91,14 +105,8 @@ def _ping_redis(redis_url: str) -> None:
         raise StartupError(f"Redis ping failed: {exc}") from exc
 
 
-# TEMPLATE NOTE: if your strategy benefits from caching per-day candles, wrap the
-# market-data client with your own cache and pass it to Daemon(market_data_client=...).
-# The base daemon only needs an object exposing
-# `fetch_market_data(code, *, now_kst, candle_count)`. Kept out of the engine on purpose.
-
-
 class Daemon:
-    """Orchestrates the decision cycle over injected ports (testable)."""
+    """Orchestrates the rebalancing decision cycle over injected ports (testable)."""
 
     def __init__(
         self,
@@ -111,6 +119,7 @@ class Daemon:
         clock: Callable[[], datetime] = _now_kst,
         reconnect_fn: Optional[Callable[[], None]] = None,
         holiday_cache: Any = None,
+        status_path: Optional[str] = None,
     ) -> None:
         self.config = config
         self._slot = slot_port
@@ -120,24 +129,23 @@ class Daemon:
         self._clock = clock
         self._reconnect_fn = reconnect_fn
         self._holiday_cache = holiday_cache
-        # Same-day reentry guard: slot_ids admitted today; reset on new
-        # trading day. Working same-day reentry prevention lives here (per-slot),
-        # not in the strategy (per_day_limit was removed).
+        self._status_path = status_path
+        # Same-day reentry guard for BUY only: slot_ids admitted today; reset on new trading day.
+        # Sell is re-evaluated every cycle (intent_id dedup at trex-core handles same-day dedup).
         self._admitted_slots: set[str] = set()
         self._tracker_date: Optional[str] = None
-        if config.entry_capital_krw <= 0:
-            from trex_tvr.runtime.config import ConfigError
-            raise ConfigError(
-                f"entry_capital_krw must be a positive integer (got {config.entry_capital_krw!r})"
-            )
-        self._entry_capital = config.entry_capital_krw
+        # REQ-004: initialize status snapshot
+        self._snapshot = StatusSnapshot()
         registry.ensure_default_strategies_loaded()
 
     @staticmethod
     def _eligible_for_eval(row: dict) -> Optional[str]:
-        """Return a diagnostic reason if a slot row is NOT a buy candidate, else None."""
-        if row.get("status") != "inactive":
-            return "not_inactive"
+        """Return a diagnostic reason if a slot row is NOT an eval candidate, else None.
+
+        TVR evaluates both inactive (initial buy) and holding (rebalancing buy/sell) slots.
+        """
+        if row.get("status") not in _ELIGIBLE_STATUSES:
+            return "not_eligible_status"
         if row.get("paused") is True:
             return "paused"
         if row.get("universe_detached") is True:
@@ -147,12 +155,36 @@ class Daemon:
         return None
 
     def _slot_for_eval(self, row: dict) -> dict:
-        """Map a slot row into the strategy eval asset."""
+        """Map a slot row into the strategy eval asset.
+
+        Injects qty, cash_balance, strategy_params from the slot row.
+        current_price is injected later in Phase 1 fan-out worker.
+        """
         return {
             "symbol": row.get("symbol"),
             "slot_id": row.get("slot_id"),
-            "entry_capital": self._entry_capital,
+            "qty": int(row.get("qty") or row.get("asset_quantity") or 0),
+            "cash_balance": int(row.get("cash_balance") or 0),
+            "strategy_params": row.get("strategy_params"),
         }
+
+    def _update_snapshot(
+        self,
+        *,
+        cycle_status: str,
+        error: Optional[str] = None,
+        idle_reason: Optional[str] = None,
+        deps: Optional[DepsStatus] = None,
+    ) -> None:
+        """Update the in-memory snapshot and write it atomically to file (best-effort)."""
+        self._snapshot.last_cycle_ts = _now_kst().isoformat()
+        self._snapshot.cycle_count += 1
+        self._snapshot.last_status = cycle_status
+        self._snapshot.last_error = error  # None on normal cycle
+        self._snapshot.idle_reason = idle_reason
+        if deps is not None:
+            self._snapshot.deps = deps
+        write_snapshot(self._snapshot, self._status_path)
 
     def run_decision_cycle(self, now_kst: Optional[datetime] = None) -> dict:
         now = now_kst or self._clock()
@@ -165,33 +197,34 @@ class Daemon:
             self.config.schedule, now, self.config.strategy_id, self.config.strategy_params
         )
         if not strategies:
+            self._update_snapshot(cycle_status="skipped", idle_reason="out_of_schedule")
             return {"status": "skipped", "reason": "out_of_schedule", "intents": [], "cycle_elapsed_ms": 0}
 
-        # Holiday gate: on a KRX holiday, skip the whole cycle BEFORE the
-        # slots RPC so no slots/fan-out work happens on a closed day (trex-core +
-        # kis-data-hub load saved). HolidayCache is fail-open — a check
-        # failure returns True so the cycle proceeds.
+        # Holiday gate
         if self._holiday_cache is not None and not self._holiday_cache.is_trading_day(
             now.strftime("%Y%m%d")
         ):
+            self._update_snapshot(cycle_status="skipped", idle_reason="holiday")
             return {"status": "skipped", "reason": "holiday", "intents": [], "cycle_elapsed_ms": 0}
 
         trading_date = now.date().isoformat()
-        # Reset the reentry tracker at a new trading day.
+        # Reset the buy reentry tracker at a new trading day.
         if self._tracker_date != trading_date:
             self._admitted_slots.clear()
             self._tracker_date = trading_date
-        slots_resp = self._slot.request_slots(filter="inactive")
+
+        # slots request: include strategy filter (additive — older trex-core ignores it)
+        slots_resp = self._slot.request_slots(
+            filter="inactive,holding",
+            strategy=self.config.strategy_id,
+        )
         if slots_resp.get("degraded"):
+            self._update_snapshot(cycle_status="degraded_hold")
             return {"status": "degraded_hold", "reason": slots_resp.get("reason"), "intents": [], "cycle_elapsed_ms": 0}
 
-        # Pre-flight capacity gate: trex-core's server-side
-        # `available_slots` hint == 0 means all slots occupied — every buy intent would
-        # be rejected `capacity_full`, so skip the whole cycle and avoid the wasted AMQP
-        # round-trips. `None` (max_active_slots unset / older core) means uncapped:
-        # pass through to the existing logic. The `capacity_full` admission gate stays
-        # the authoritative backstop; this hint never replaces it.
+        # Capacity hint gate (available_slots == 0 means all slots occupied for buy)
         if slots_resp.get("available_slots") == 0:
+            self._update_snapshot(cycle_status="capacity_full_hint_skip", idle_reason="capacity_full_hint_skip")
             return {
                 "status": "capacity_full_hint_skip",
                 "reason": "capacity_full_hint_skip",
@@ -203,9 +236,10 @@ class Daemon:
 
         slots = slots_resp.get("slots") or []
         if not slots:
+            self._update_snapshot(cycle_status="no_op")
             return {"status": "no_op", "slots": 0, "intents": [], "cycle_elapsed_ms": 0}
 
-        # Eligibility filter — before cycle timer starts.
+        # Eligibility filter
         diagnostics: list[dict] = []
         eligible: list[tuple[dict, dict]] = []
         for row in slots:
@@ -215,18 +249,24 @@ class Daemon:
                     {"slot_id": row.get("slot_id"), "reason": excluded, "kind": "excluded"}
                 )
                 continue
+            # strategy_params missing fallback (REQ-003): skip without buy/sell
+            if not row.get("strategy_params"):
+                diagnostics.append(
+                    {"slot_id": row.get("slot_id"), "reason": "missing_strategy_params", "kind": "diagnostic"}
+                )
+                continue
             eval_asset = self._slot_for_eval(row)
             eligible.append((row, eval_asset))
 
         if not eligible:
+            self._update_snapshot(cycle_status="no_op")
             return {"status": "no_op", "slots": len(slots), "intents": [], "diagnostics": diagnostics, "cycle_elapsed_ms": 0}
 
         # Cycle timer starts after eligibility filter.
         cycle_start = time.monotonic()
         strategy = strategies[0]
 
-        # Phase 1: fan-out — market data fetch + strategy evaluate in parallel workers.
-        # Workers MUST NOT access transport (pika thread-safety invariant).
+        # Phase 1: fan-out — current price fetch + strategy evaluate in parallel workers.
         raw_results: list[tuple[dict, Any]] = []
         with ThreadPoolExecutor(max_workers=self.config.worker_count) as executor:
             futures_map = [
@@ -235,8 +275,8 @@ class Daemon:
             ]
             for eval_asset, fut in futures_map:
                 try:
-                    _, decision = fut.result()
-                    raw_results.append((eval_asset, decision))
+                    updated_asset, decision = fut.result()
+                    raw_results.append((updated_asset, decision))
                 except Exception as exc:
                     raw_results.append(
                         (eval_asset, KisDataHubClientError(str(exc), error_class="other"))
@@ -247,6 +287,7 @@ class Daemon:
             if isinstance(decision, KisDataHubClientError) and decision.error_class == "auth":
                 diagnostics.append({"symbol": eval_asset["symbol"], "error_class": "auth"})
                 cycle_elapsed_ms = int((time.monotonic() - cycle_start) * 1000)
+                self._update_snapshot(cycle_status="aborted", error="kis_auth_failure")
                 return {
                     "status": "aborted",
                     "reason": "kis_auth_failure",
@@ -268,32 +309,66 @@ class Daemon:
                         {"symbol": eval_asset["symbol"], "reason": "missing_slot_id", "kind": "diagnostic"}
                     )
                     continue
-                # Reentry guard: slot already admitted today -> skip this
-                # slot (per-slot). correctness backstop is the identical intent_id
-                # dedup at trex-core; this avoids the wasted AMQP round-trip.
+                # Buy reentry guard: slot already admitted today -> skip
                 if slot_id in self._admitted_slots:
                     diagnostics.append(
                         {"slot_id": slot_id, "reason": "reentry_skip", "kind": "skipped"}
                     )
                     continue
-                payload = build_buy_intent(
-                    decision,
+                # Build buy payload — no stop_loss/take_profit (TVR pure rebalancing, [exit] optional)
+                buy_kwargs: dict = dict(
                     trading_date=trading_date,
                     slot_id=slot_id,
-                    stop_loss_pct=self.config.exit.stop_loss_pct,
-                    take_profit_pct=self.config.exit.take_profit_pct,
                     strategy_id=strategy.strategy_id,
                     timeout_sec=self.config.execution.timeout_sec,
                     slippage_pct=self.config.execution.slippage_pct,
                 )
+                if self.config.exit is not None:
+                    buy_kwargs["stop_loss_pct"] = self.config.exit.stop_loss_pct
+                    buy_kwargs["take_profit_pct"] = self.config.exit.take_profit_pct
+                else:
+                    # TVR: no exit thresholds on buy intent
+                    buy_kwargs["stop_loss_pct"] = 0.0
+                    buy_kwargs["take_profit_pct"] = 0.0
+                payload = build_buy_intent(decision, **buy_kwargs)
+                # Remove stop_loss_price / take_profit_price when exit is None (TVR)
+                if self.config.exit is None:
+                    payload.pop("stop_loss_price", None)
+                    payload.pop("take_profit_price", None)
                 response = self._intent.submit_buy(payload)
                 intents.append({"payload": payload, "response": response})
                 if response.get("status") == "admitted":
-                    self._admitted_slots.add(slot_id)  # reentry guard
+                    self._admitted_slots.add(slot_id)
                 elif response.get("status") == "rejected":
+                    reason = response.get("reason")
                     diagnostics.append(
-                        {"slot_id": slot_id, "reason": response.get("reason"), "kind": "rejected"}
+                        {"slot_id": slot_id, "reason": reason, "kind": "rejected"}
                     )
+                    if reason == "already_active":
+                        # REQ-003 AC-5: log and wait for next cycle re-convergence
+                        logger.debug("buy already_active slot_id=%s, will re-converge next cycle", slot_id)
+            elif isinstance(decision, SellSignal):
+                if not slot_id:
+                    diagnostics.append(
+                        {"symbol": eval_asset["symbol"], "reason": "missing_slot_id", "kind": "diagnostic"}
+                    )
+                    continue
+                # Sell: no reentry guard — re-evaluated every cycle (trex-core dedup via intent_id)
+                sell_payload = build_sell_intent(
+                    decision,
+                    trading_date=trading_date,
+                    slot_id=slot_id,
+                    strategy_id=strategy.strategy_id,
+                )
+                sell_response = self._intent.submit_sell(sell_payload)
+                intents.append({"payload": sell_payload, "response": sell_response})
+                if sell_response.get("status") == "rejected":
+                    reason = sell_response.get("reason")
+                    diagnostics.append(
+                        {"slot_id": slot_id, "reason": reason, "kind": "rejected"}
+                    )
+                    if reason == "already_active":
+                        logger.debug("sell already_active slot_id=%s, will re-converge next cycle", slot_id)
             elif isinstance(decision, Diagnostic):
                 diagnostics.append(
                     {"symbol": eval_asset["symbol"], "reason": decision.reason, "kind": "diagnostic"}
@@ -316,6 +391,7 @@ class Daemon:
             "events_observed": len(observed),
             "cycle_elapsed_ms": cycle_elapsed_ms,
         }
+        self._update_snapshot(cycle_status="ok")
         if logger.isEnabledFor(logging.INFO):
             logger.info(
                 "cycle ok slots=%d eligible=%d intents=%d diagnostics=%d elapsed=%dms",
@@ -355,12 +431,18 @@ class Daemon:
                         "transport error (attempt=%d, retry in %.0fs): %s",
                         backoff_attempt + 1, delay, exc,
                     )
+                    # Update snapshot with transport error (REQ-004 AC-4)
+                    self._snapshot.last_error = str(exc)
+                    self._snapshot.deps.rabbitmq = "error"
+                    write_snapshot(self._snapshot, self._status_path)
                     time.sleep(delay)
                     backoff_attempt += 1
                     if self._reconnect_fn is not None:
                         try:
                             self._reconnect_fn()
                             logger.info("reconnected after %d attempt(s)", backoff_attempt)
+                            self._snapshot.deps.rabbitmq = "ok"
+                            write_snapshot(self._snapshot, self._status_path)
                             backoff_attempt = 0
                         except Exception as reconnect_exc:
                             logger.error("reconnect failed: %s", reconnect_exc)
@@ -369,7 +451,7 @@ class Daemon:
             return
 
 
-def build_daemon(config: Config) -> tuple[Daemon, Callable[[], None]]:
+def build_daemon(config: Config, status_path: Optional[str] = None) -> tuple["Daemon", Callable[[], None]]:
     """Wire the real pika + kis-data-hub + Redis dependencies. Fail-closed startup."""
     from trex_tvr.transport.connection import PikaConnection
     from trex_tvr.transport.events_consumer import PikaEventsConsumer
@@ -388,16 +470,21 @@ def build_daemon(config: Config) -> tuple[Daemon, Callable[[], None]]:
         timeout=config.rpc_timeout_seconds,
         allow_stale=config.kis_data_hub.allow_stale,
     )
+    # Initial deps status for snapshot
+    deps = DepsStatus()
     try:
         logger.info("startup: connecting to RabbitMQ ...")
         conn.connect()
         logger.info("startup: RabbitMQ connected")
+        deps.rabbitmq = "ok"
         logger.info("startup: probing kis-data-hub /health (%s) ...", config.kis_data_hub.base_url)
         kis.check_health()
         logger.info("startup: kis-data-hub healthy")
+        deps.kis_data_hub = "ok"
         logger.info("startup: pinging Redis (%s) ...", config.redis_url)
         _ping_redis(config.redis_url)
         logger.info("startup: Redis ping OK")
+        deps.redis = "ok"
     except Exception as exc:
         logger.error("startup failed (fail-closed): %s", exc)
         conn.close()
@@ -410,10 +497,15 @@ def build_daemon(config: Config) -> tuple[Daemon, Callable[[], None]]:
         slot_port=PikaSlotClient(conn, config.instance_key, config.rpc_timeout_seconds),
         intent_port=PikaIntentClient(conn, config.instance_key, config.rpc_timeout_seconds),
         events_port=PikaEventsConsumer(conn, config.strategy_id),
-        market_data_client=kis,  # plain kis client; wrap with a cache if your strategy needs one
+        market_data_client=kis,
         reconnect_fn=conn.reconnect,
         holiday_cache=HolidayCache(config.redis_url, kis),
+        status_path=status_path,
     )
+    # Write initial snapshot after successful startup
+    daemon._snapshot.deps = deps
+    daemon._snapshot.last_status = "started"
+    write_snapshot(daemon._snapshot, status_path)
 
     def _shutdown() -> None:
         conn.close()
