@@ -3,74 +3,92 @@
 **Target-Value Rebalancer (TVR) v1** — constant-mix 목표비율 리밸런싱 장기전략 데몬.
 
 보유 포트폴리오의 종목별 비율이 목표(target weight)에서 임계치 이상 벗어날 때
-매수 인텐트를 발행해 비율을 복원하는 장기(중장기) 전략 데몬이다.
+**매수 또는 부분매도 인텐트**를 발행해 비율을 복원하는 장기(중장기) 전략 데몬이다.
 
-> **Scaffolded from `trex-strategy-template`.**
-> TVR 전략 로직(목표비율 편차 평가)은 Discovery/REQ 이후 구현 예정.
-> 현재는 스캐폴드 + baseline 상태.
+**BAT-001 구현 완료** (2026-07-04):
+- `TvrStrategy.evaluate()`: 실제 constant-mix 리밸런싱 로직 (비중·밴드·dust·whole-share)
+- sell-intent 경로 신설: `IntentPort.submit_sell` + `build_sell_intent` + 멱등 intent_id(`sell:...`)
+- decision-cycle 리밸런싱형: inactive+holding 평가, buy/sell 분기, strategy_params 폴백
+- status/health 스냅샷 (REQ-004 day-1 관측성): `tvr status` CLI + `/tmp/trex_tvr_status.json`
 
-## TODO(설계): 리밸런싱 sell-intent 경로
+## Architecture
 
-템플릿 프레임은 **매수 전용** (transport가 sell intent 미발신, 청산=core 위임)이다.
-TVR은 **자체 부분매도(SellIntent.qty)** 로 리밸런싱해야 하므로, 이후 구현에서
-**transport/intent_builder에 sell-intent(부분매도) 경로 추가 + decision-cycle을
-리밸런싱형으로 확장**이 필요하다. 이는 Discovery/설계 항목이다.
+```
+                ┌─────────────────────────────────────────────────────┐
+                │  per-slot strategy_params (portfolio-hub → trex-core → TVR)  │
+                │  target_weight, rebalance_band_pct, min_trade_krw             │
+                └───────────────────────────────┬─────────────────────┘
+                                                │
+ ┌─────────────────┐    slots.req              ▼
+ │   trex-core     │ ◄──── strategy:"tvr_v1" ──── TvrStrategy.evaluate()
+ │ (HOLDING slots) │                              pure deterministic function
+ │ (INACTIVE slots)│ ────► SellSignal / BuySignal / HoldDecision
+ └─────────────────┘               │
+                                   └── transport: submit_buy / submit_sell
+```
 
-## What you implement vs. what you reuse
+## Seam rules (enforced by `tests/test_import_sweep.py`)
 
-| Reuse as-is (the frame) | Replace (your strategy) |
-|---|---|
-| `transport/` — slots/intent/events/connection (pure AMQP) | `strategies/example_strategy.py` → `TvrStrategy` |
-| `market_data/kis_data_hub_client.py`, `holiday_cache.py` | `[strategy.tvr_v1]` params in the instance TOML |
-| `runtime/daemon.py` — the decision-cycle engine | `tests/strategies/test_example_strategy.py` |
-| `runtime/config.py`, `cli.py`, `intent_builder.py` | the `register(...)` call in `strategies/registry.py` |
-| `strategies/base.py` — the `BuyStrategy` contract | TVR 파라미터(target_weight, rebalance_threshold 등) |
-
-The **seam** (`strategies/` imports no infra; nothing imports `trex_core`) is enforced
-by `tests/test_import_sweep.py` — keep your strategy a pure, deterministic function.
+- `strategies/` must NOT import `transport`, `market_data`, `redis`, `pika`, `httpx`
+- `trex_tvr/` must NOT import `trex_core` (pure AMQP wire contract only)
+- Strategy `evaluate()` must be deterministic (no IO, no clock, no random)
 
 ## Quickstart
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
-pytest -q          # import sweep + tvr scaffold strategy + engine smoke
+pytest -q   # import sweep + tvr strategy + engine + observability tests
 ```
 
 ### Run
 ```bash
-cp config/.env.example config/.env   # fill in broker / kis-data-hub / redis
-trex-tvr --config instance.example --verbose
+cp config/.env.example config/.env   # fill in TREX_RABBITMQ_URL / KIS / REDIS
+trex-tvr run --config instance.example --verbose
+```
+
+### Check status
+```bash
+trex-tvr status                  # reads /tmp/trex_tvr_status.json
+trex-tvr status --path /var/run/tvr_status.json
 ```
 
 ### Backtest (strategy-agnostic)
 ```bash
-# 1) Download a candle dump
 python scripts/run_dump.py --from 20260501 --to 20260612
-
-# 2) Backtest
 trex-tvr-backtest --config instance.example --date-range 20260501:20260612 \
   --dump-dir data/dump --capacity 20
 ```
 
-## Contract notes (inherited from trex-strategy-template / trex-core)
-- **slot_id is the canonical buy key** (round-tripped from `trex.slots.req`).
-- **Exit is delegated to trex-core** via `stop_loss_pct`/`take_profit_pct` on the buy
-  intent (`[exit]` config). The daemon does not send sell intents in the current scaffold.
-  *(TVR 리밸런싱 매도는 sell-intent 경로 설계 후 추가 예정.)*
-- **Idempotency**: `intent_id = {strategy_id}:{trading_date}:{slot_id}`.
-- Requires a `safety_sell_enabled` trex-core instance and a Redis URL (holiday cache).
+## Contract notes
+
+- **slot_id is the canonical key** (buy and sell intents).
+- **TVR exit**: TVR is a pure rebalancing strategy — it does NOT declare stop_loss/take_profit
+  on buy intents. The `[exit]` config section is optional and omitted for TVR.
+- **Idempotency**: buy `intent_id = {strategy_id}:{trading_date}:{slot_id}`,
+  sell `intent_id = sell:{strategy_id}:{trading_date}:{slot_id}`.
+- **strategy_params** (target_weight etc.) come from portfolio-hub `strategy_sets` → trex-core
+  slot row → daemon eval_asset. TVR config TOML carries runtime settings only.
+- **trex-core wire dependencies** (strategy filter + row strategy_params) are additive changes
+  not yet deployed; TVR handles missing_strategy_params via fallback Diagnostic (slots skipped).
+- Requires Redis URL (holiday cache).
 
 ## Layout
 ```
 trex_tvr/
-  strategies/   base.py (contract) · registry.py · example_strategy.py (TvrStrategy)
+  strategies/   base.py (BuySignal/SellSignal/HoldDecision/Diagnostic contract)
+                registry.py · tvr_strategy.py (TvrStrategy — rebalancing logic)
   market_data/  kis_data_hub_client.py · holiday_cache.py
-  transport/    base.py · connection.py · slot_client.py · intent_client.py · events_consumer.py
-  runtime/      daemon.py (engine) · config.py · intent_builder.py · cli.py
-  backtest/     replay_engine.py · exit_simulator.py · metrics.py · dump_loader.py · dump_job.py · universe.py · bt_config.py · cli.py
+  transport/    base.py · connection.py · slot_client.py
+                intent_client.py (submit_buy + submit_sell)
+                events_consumer.py
+  runtime/      daemon.py (rebalancing engine) · config.py · intent_builder.py
+                status.py (StatusSnapshot · write_snapshot · read_snapshot)
+                cli.py (run | status subcommands)
+  backtest/     replay_engine.py · exit_simulator.py · metrics.py · dump_loader.py
+                dump_job.py · universe.py · bt_config.py · cli.py
 scripts/        run_dump.py
 tests/          test_import_sweep.py (seam) · strategies/ · runtime/ · backtest/
 config/         instance.example.toml · .env.example · backtest_universe.csv
-docs/           SDLC baseline 문서 + active index (.stage-pilot/bootstrap/baseline.yaml)
+docs/           SDLC baseline + batches/bat-001_20260704_tvr-rebalancing-v1/
 ```
