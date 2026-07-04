@@ -52,6 +52,21 @@
 
 ## Change Log
 
+### CHG-20260704-03
+- Date: 2026-07-04
+- Author: 팀장(Claude) — change-req (QC 지적 반영: AC-2 서술 정정)
+
+#### Change Summary
+- **AC-2 예시 수치 정정.** 기존 예시(qty=10, cash=100,000)는 현재비중 83%로 SELL 영역이라 "현금 부족 매수 축소" 시나리오가 성립하지 않음(QC 검산). 나아가 per-아이템 할당 모델에서는 **델타금액 = target×총할당 − 주식가치 ≤ cash_balance가 항상 성립**하므로(target_weight<1), 정상 입력에서 현금 부족은 수학적으로 발생 불가.
+- AC-2를 **방어 불변식**으로 재정의: "어떤 입력에서도 BuySignal의 매수수량 × current_price ≤ cash_balance" (스냅샷 불일치·이상 입력 대비 방어 클램프 검증). 구현(min 클램프)·테스트는 이미 이를 충족(bat-001).
+
+#### Acceptance Criteria Delta
+- Updated: AC-2 → "Given 임의의 유효/이상 입력, When evaluate()가 BuySignal을 반환하면, Then target_qty × current_price ≤ cash_balance (불변식). 방어 클램프 경로가 테스트로 검증된다."
+
+#### Revalidation Impact
+- Reverification Needed: no (기존 테스트가 신 AC-2를 이미 커버) / Existing Implementation Invalidated: no
+- Status Recommendation: Approved 유지
+
 ### CHG-20260704-02
 - Date: 2026-07-04
 - Author: 팀장(Claude) — confirm-req
