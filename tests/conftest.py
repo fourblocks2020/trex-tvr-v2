@@ -17,8 +17,8 @@ class StubSlotPort:
         self.response = response
         self.calls: list[dict] = []
 
-    def request_slots(self, *, filter) -> dict:
-        self.calls.append({"filter": filter})
+    def request_slots(self, *, filter, strategy=None) -> dict:
+        self.calls.append({"filter": filter, "strategy": strategy})
         return self.response
 
 

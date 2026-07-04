@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from typing import Optional
 
 from trex_tvr.transport.base import build_slots_request, parse_slots_response, queue_name
 from trex_tvr.transport.connection import PikaConnection
@@ -25,8 +26,8 @@ class PikaSlotClient:
         self._routing_key = queue_name(_SLOTS_BASE, instance_key)
         self._rpc_timeout = rpc_timeout
 
-    def request_slots(self, *, filter: str) -> dict:
-        body = build_slots_request(filter)
+    def request_slots(self, *, filter: str, strategy: Optional[str] = None) -> dict:
+        body = build_slots_request(filter, strategy=strategy)
         raw = self._conn.rpc_call(
             self._routing_key,
             json.dumps(body).encode("utf-8"),

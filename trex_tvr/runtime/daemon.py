@@ -43,7 +43,6 @@ from trex_tvr.transport.base import (
     RpcTimeoutError,
     SlotPort,
     TransportUnavailableError,
-    build_slots_request,
 )
 
 _KST = timezone(timedelta(hours=9))
@@ -215,11 +214,10 @@ class Daemon:
             self._tracker_date = trading_date
 
         # slots request: include strategy filter (additive — older trex-core ignores it)
-        slots_req_body = build_slots_request(
+        slots_resp = self._slot.request_slots(
             filter="inactive,holding",
             strategy=self.config.strategy_id,
         )
-        slots_resp = self._slot.request_slots(filter=slots_req_body.get("filter", "inactive,holding"))
         if slots_resp.get("degraded"):
             self._update_snapshot(cycle_status="degraded_hold")
             return {"status": "degraded_hold", "reason": slots_resp.get("reason"), "intents": [], "cycle_elapsed_ms": 0}

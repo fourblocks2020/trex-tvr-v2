@@ -204,3 +204,25 @@ def test_buy_reentry_guard_applies_to_buy_only():
     assert len(result2["intents"]) == 0
     diag_reasons = [d.get("reason") for d in result2["diagnostics"]]
     assert "reentry_skip" in diag_reasons
+
+
+def test_req003_ac1_strategy_filter_passed_to_slot_port():
+    """REQ-003 AC-1: strategy='tvr_v1' is forwarded to SlotPort.request_slots() on every cycle.
+
+    QC MAJOR fix: daemon previously called request_slots(filter=...) only, dropping the
+    strategy field. After the fix, slot.calls must contain strategy='tvr_v1'.
+    """
+    now = datetime(2026, 6, 8, 10, 0, tzinfo=KST)
+    slot_row = inactive_slot(qty=0, cash_balance=1_000_000, strategy_params=_TVR_PARAMS)
+    slot = StubSlotPort({"slots": [slot_row], "degraded": False})
+    intent = StubIntentPort({"status": "admitted", "slot_id": "slot-1"})
+    daemon = _daemon(slot, intent, StubMarketData(2000), now)
+
+    daemon.run_decision_cycle()
+
+    assert len(slot.calls) == 1
+    call = slot.calls[0]
+    assert call["filter"] == "inactive,holding", "filter must be 'inactive,holding'"
+    assert call["strategy"] == "tvr_v1", (
+        f"strategy must be 'tvr_v1' in wire body; got {call['strategy']!r}"
+    )

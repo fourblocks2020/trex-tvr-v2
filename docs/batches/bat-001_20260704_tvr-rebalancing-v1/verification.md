@@ -7,16 +7,31 @@
 
 실행 명령: `.venv/bin/pytest -v`
 실행 환경: Python 3.12.3, pytest-9.1.1, Linux
-실행 결과: **81 passed, 0 failed, 0 errors** (0.21s)
+실행 결과: **88 passed, 0 failed, 0 errors** (0.21s)
 
 ```
-tests/backtest/...             (40 tests) all PASSED  — regression
-tests/runtime/test_daemon_cycle.py   (8 tests)  all PASSED
+tests/backtest/...                   (40 tests) all PASSED  — regression
+tests/runtime/test_daemon_cycle.py   (9 tests)  all PASSED  (+1 REQ-003 AC-1 wire 검증)
 tests/runtime/test_intent_builder.py (8 tests)  all PASSED
 tests/runtime/test_observability.py  (8 tests)  all PASSED
 tests/strategies/test_tvr_strategy.py (14 tests) all PASSED
 tests/test_import_sweep.py           (3 tests)  all PASSED
+tests/test_transport_wire.py         (6 tests)  all PASSED  [신규 — QC MAJOR 수정 후 추가]
 ```
+
+### QC MAJOR 수정 이력 (2026-07-04)
+
+QC 반려(PASS-WITH-NOTES, MAJOR 1건): REQ-003 AC-1 — `strategy:"tvr_v1"`가 wire body에 전달되지 않는 버그.
+
+수정 커밋: `fix(bat-001/REQ-003): slots 요청 strategy 필터 wire 전달 (QC MAJOR) + AC-1 실검증 테스트`
+
+수정 내역:
+- `transport/base.py` SlotPort 프로토콜: `request_slots(*, filter, strategy=None)` 로 additive 확장
+- `transport/slot_client.py` PikaSlotClient: strategy 인자를 받아 `build_slots_request(filter, strategy=strategy)` wire body 전달
+- `runtime/daemon.py`: body 재조립 우회(`build_slots_request` 호출 후 `filter`만 추출) 제거 → `self._slot.request_slots(filter=..., strategy=self.config.strategy_id)` 직접 전달
+- `tests/conftest.py` StubSlotPort: `strategy` 인자를 calls 기록에 포함
+- `tests/runtime/test_daemon_cycle.py`: `test_req003_ac1_strategy_filter_passed_to_slot_port` 추가
+- `tests/test_transport_wire.py`: 신규 — `build_slots_request` + `PikaSlotClient` wire body 단위 검증 6개
 
 ## Acceptance Mapping
 
@@ -52,7 +67,7 @@ tests/test_import_sweep.py           (3 tests)  all PASSED
 
 | AC | 내용 요약 | 테스트 | 결과 |
 |----|-----------|--------|------|
-| AC-1 | strategy 필터 포함 요청 | test_full_cycle_emits_buy_intent_for_inactive_slot (filter 검증) | PASS |
+| AC-1 | strategy 필터 포함 요청 | test_req003_ac1_strategy_filter_passed_to_slot_port + test_transport_wire.py (6 tests) | PASS (QC MAJOR 수정 후 구현+테스트 완료) |
 | AC-2 | inactive+BuySignal → submit_buy, no stop_loss_price | test_full_cycle_emits_buy_intent_for_inactive_slot | PASS |
 | AC-3 | holding+SellSignal → submit_sell | test_full_cycle_emits_sell_intent_for_holding_slot | PASS |
 | AC-4 | strategy_params 없는 row → missing_strategy_params diagnostic | test_missing_strategy_params_skips_slot | PASS |

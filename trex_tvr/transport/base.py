@@ -35,7 +35,7 @@ class WireSchemaError(TransportError):
 
 @runtime_checkable
 class SlotPort(Protocol):
-    def request_slots(self, *, filter: str) -> dict: ...
+    def request_slots(self, *, filter: str, strategy: Optional[str] = None) -> dict: ...
 
 
 @runtime_checkable
