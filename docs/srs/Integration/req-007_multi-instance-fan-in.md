@@ -1,6 +1,6 @@
 # req-007: 다중 인스턴스 팬-인
 
-- Status: Approved
+- Status: Implemented
 - Type: Integration
 - Priority: High
 - Owner: service-dev (tvr)
@@ -84,6 +84,21 @@
   - `strategies/evaluate()` 시그니처·순수성 불변. 인스턴스 개념은 `runtime/daemon.py`에만 존재. AC-9로 검증.
 
 ## Change Log
+
+### CHG-20260707-01
+- Date: 2026-07-07
+- Author: 팀장(Claude) — confirm-req-implemented
+
+#### Change Summary
+- Approved → **Implemented**: bat-002 구현 완료. 독립 QC PASS-WITH-NOTES(blocker 0) — 154 passed, AC 33/33, 체결불가 구간 intent 발신 경로 부재·교차 라우팅 0 실증. PR #2 사장님 결재·머지(2c484cf, 2026-07-07) = confirm-batch-verification 완료.
+- 잔여 부채(비차단): intent_builder docstring 구포맷 정정, cadence AC-2 어설션 강화. 배포 게이트: tvr 배포 직전 trex-core 재시작(intent_id 포맷 전환).
+
+#### Delivery Trace Delta
+- Batches: bat-002_20260706_session-cadence-fanin (merged, PR #2)
+
+#### Revalidation Impact
+- Reverification Needed: no / Existing Implementation Invalidated: no
+- Status Recommendation: Implemented
 
 ### CHG-20260706-02
 - Date: 2026-07-06
