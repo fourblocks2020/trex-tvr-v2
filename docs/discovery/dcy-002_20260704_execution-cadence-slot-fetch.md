@@ -4,10 +4,10 @@
 - 문서 ID: dcy-002_20260704_execution-cadence-slot-fetch
 - 이슈명: tvr 실행 케이던스·슬롯 패치 아키텍처 (세션 윈도우·폴링·팬-인·백프레셔)
 - 작성 시각(KST): 2026-07-04
-- 마지막 갱신 시각(KST): 2026-07-06 (v5: OQ-4 2차 실측 완료 — 실전 NXT 주문·취소 rt_cd=0·잔여 0건, 전 경로 동작 확정. v4: OQ-4 1차 실측 — 실전 NX/UN 시세 지원 확정·NXT 유동성 실재(005930 ~45%)·토큰 신정책(충돌 리스크 소멸). v3: FR-8 슬롯별 시장 적격성 게이트 — assets.markets 재활용(사장님 제안). v2: OQ-1/2 Answered — KIS NXT 스펙 조사 반영, OQ-4 VTS 실측 신설, NXT 선정종목 제한 발견)
+- 마지막 갱신 시각(KST): 2026-07-06 (v6: REQ-005~007 초안 생성. v5: OQ-4 2차 실측 완료 — 실전 NXT 주문·취소 rt_cd=0·잔여 0건, 전 경로 동작 확정. v4: OQ-4 1차 실측 — 실전 NX/UN 시세 지원 확정·NXT 유동성 실재(005930 ~45%)·토큰 신정책(충돌 리스크 소멸). v3: FR-8 슬롯별 시장 적격성 게이트 — assets.markets 재활용(사장님 제안). v2: OQ-1/2 Answered — KIS NXT 스펙 조사 반영, OQ-4 VTS 실측 신설, NXT 선정종목 제한 발견)
 - 대체됨: 없음
 - 후속 Discovery 참조: 없음
-- 생성된 REQ 참조: 없음
+- 생성된 REQ 참조: REQ-005, REQ-006, REQ-007 (tvr) + cross-repo: trex-core REQ-117/118(venue), kis-data-hub REQ-069/070/071(시세 market) — 전건 Approved 2026-07-06
 
 # 1. 계획 상태 요약
 
