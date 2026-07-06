@@ -5,10 +5,12 @@ BAT-001: Updated from scaffold placeholder to rebalancing-type engine tests.
 - [exit] is optional (TVR = pure rebalancing, no stop_loss/take_profit on buy intent)
 - strategy_params injected via slot row
 - inactive + holding slots both evaluated
+
+BAT-002: Extended with session gate + NXT markets gate tests (REQ-005 AC-13, AC-14, AC-15).
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from tests.conftest import (
     KST,
@@ -82,7 +84,8 @@ def test_full_cycle_emits_buy_intent_for_inactive_slot():
     payload = result["intents"][0]["payload"]
     assert payload["intent_type"] == "buy"
     assert payload["slot_id"] == "slot-1"
-    assert payload["intent_id"] == "tvr_v1:2026-06-08:slot-1"
+    # BAT-002 REQ-007: intent_id now includes instance_key.
+    assert payload["intent_id"] == "tvr_v1:default:2026-06-08:slot-1"
     # REQ-003 AC-2: TVR buy intent has no stop_loss_price / take_profit_price
     assert "stop_loss_price" not in payload
     assert "take_profit_price" not in payload
@@ -226,3 +229,158 @@ def test_req003_ac1_strategy_filter_passed_to_slot_port():
     assert call["strategy"] == "tvr_v1", (
         f"strategy must be 'tvr_v1' in wire body; got {call['strategy']!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# BAT-002 REQ-005: session gate + NXT markets gate (AC-13, AC-14, AC-15)
+# ---------------------------------------------------------------------------
+
+class _HolidayCacheAlwaysHoliday:
+    def is_trading_day(self, date_str: str) -> bool:
+        return False
+
+
+class _HolidayCacheAlwaysTrading:
+    def is_trading_day(self, date_str: str) -> bool:
+        return True
+
+
+def _daemon_with_holiday(slot, intent, market_data, now, holiday_cache=None):
+    from trex_tvr.runtime.config import Config, ExecutionConfig, KisDataHubConfig, ScheduleEntry
+    from trex_tvr.runtime.daemon import Daemon
+    cfg = Config(
+        instance_key="default",
+        rabbitmq_url="amqp://localhost",
+        kis_data_hub=KisDataHubConfig(base_url="http://kdh.test"),
+        schedule=[ScheduleEntry(start="08:00", end="20:00")],
+        strategy_id="tvr_v1",
+        strategy_params={"tvr_v1": {}},
+        execution=ExecutionConfig(),
+        redis_url="redis://localhost",
+        poll_interval=60,
+    )
+    return Daemon(
+        cfg,
+        slot_port=slot,
+        intent_port=intent,
+        events_port=StubEventsPort(),
+        market_data_client=market_data,
+        clock=lambda: now,
+        holiday_cache=holiday_cache,
+    )
+
+
+def test_ac13_session_hold_on_non_tradeable_session():
+    """REQ-005 AC-13: is_tradeable=False → session_hold, 전략 평가 미수행, submit_buy/sell 미호출."""
+    # CLOSE_AUCTION (15:20 ~ 15:30) is not tradeable
+    now = datetime(2026, 6, 8, 15, 25, tzinfo=KST)
+    slot_row = inactive_slot(qty=0, cash_balance=1_000_000, strategy_params=_TVR_PARAMS)
+    slot = StubSlotPort({"slots": [slot_row], "degraded": False})
+    intent = StubIntentPort({"status": "admitted", "slot_id": "slot-1"})
+    daemon = _daemon_with_holiday(slot, intent, StubMarketData(2000), now, holiday_cache=_HolidayCacheAlwaysTrading())
+
+    result = daemon.run_decision_cycle()
+
+    assert result["status"] == "session_hold"
+    # Strategy not evaluated — no slots request, no intents
+    assert result["intents"] == []
+    assert slot.calls == [], f"slots.req should not be called during session_hold, got {slot.calls}"
+    assert intent.submitted == [], "submit_buy should not be called during session_hold"
+    assert intent.sell_submitted == [], "submit_sell should not be called during session_hold"
+
+
+def test_ac13_holiday_is_session_hold():
+    """REQ-005 AC-13b: 휴장일 → session_hold (is_tradeable=False 전 구간)."""
+    # MAIN session but holiday
+    now = datetime(2026, 6, 8, 10, 0, tzinfo=KST)
+    slot_row = inactive_slot(qty=0, cash_balance=1_000_000, strategy_params=_TVR_PARAMS)
+    slot = StubSlotPort({"slots": [slot_row], "degraded": False})
+    intent = StubIntentPort({"status": "admitted", "slot_id": "slot-1"})
+    daemon = _daemon_with_holiday(slot, intent, StubMarketData(2000), now, holiday_cache=_HolidayCacheAlwaysHoliday())
+
+    result = daemon.run_decision_cycle()
+
+    assert result["status"] == "session_hold"
+    assert result["intents"] == []
+
+
+def test_ac14_nxt_session_with_nxt_market_allows_intent():
+    """REQ-005 AC-14: NXT 전용 구간 + markets=["NXT","KRX"] → 정상 평가 + intent 발신 허용."""
+    # AFTER_MARKET (16:00) is NXT-only
+    now = datetime(2026, 6, 8, 16, 0, tzinfo=KST)
+    # Slot with NXT market — should proceed normally
+    slot_row = {
+        "slot_id": "slot-1", "status": "inactive", "symbol": "005930",
+        "qty": 0, "cash_balance": 1_000_000, "strategy_params": _TVR_PARAMS,
+        "markets": ["NXT", "KRX"],
+    }
+    slot = StubSlotPort({"slots": [slot_row], "degraded": False})
+    intent = StubIntentPort({"status": "admitted", "slot_id": "slot-1"})
+    daemon = _daemon_with_holiday(slot, intent, StubMarketData(2000), now, holiday_cache=_HolidayCacheAlwaysTrading())
+
+    result = daemon.run_decision_cycle()
+
+    assert result["status"] == "ok"
+    # Should have submitted a buy intent
+    assert len(result["intents"]) == 1
+    assert result["intents"][0]["payload"]["intent_type"] == "buy"
+
+
+def test_ac15_nxt_session_without_nxt_market_suppresses_intent():
+    """REQ-005 AC-15: NXT 전용 구간 + markets=["KRX"] → intent 억제, Diagnostic(market_not_eligible)."""
+    # AFTER_MARKET (16:00) is NXT-only
+    now = datetime(2026, 6, 8, 16, 0, tzinfo=KST)
+    # Slot with KRX-only market — should be suppressed in NXT session
+    slot_row_krx = {
+        "slot_id": "slot-1", "status": "inactive", "symbol": "005930",
+        "qty": 0, "cash_balance": 1_000_000, "strategy_params": _TVR_PARAMS,
+        "markets": ["KRX"],
+    }
+    slot = StubSlotPort({"slots": [slot_row_krx], "degraded": False})
+    intent = StubIntentPort({"status": "admitted", "slot_id": "slot-1"})
+    daemon = _daemon_with_holiday(slot, intent, StubMarketData(2000), now, holiday_cache=_HolidayCacheAlwaysTrading())
+
+    result = daemon.run_decision_cycle()
+
+    assert result["status"] == "no_op"
+    assert result["intents"] == []
+    diag_reasons = [d["reason"] for d in result.get("diagnostics", [])]
+    assert "market_not_eligible" in diag_reasons
+
+
+def test_ac15_nxt_session_empty_markets_suppresses_intent():
+    """REQ-005 AC-15b: NXT 전용 구간 + markets=[] → 보수 해석(["KRX"]) → intent 억제."""
+    now = datetime(2026, 6, 8, 16, 0, tzinfo=KST)
+    slot_row_empty = {
+        "slot_id": "slot-1", "status": "inactive", "symbol": "005930",
+        "qty": 0, "cash_balance": 1_000_000, "strategy_params": _TVR_PARAMS,
+        "markets": [],
+    }
+    slot = StubSlotPort({"slots": [slot_row_empty], "degraded": False})
+    intent = StubIntentPort({"status": "admitted", "slot_id": "slot-1"})
+    daemon = _daemon_with_holiday(slot, intent, StubMarketData(2000), now, holiday_cache=_HolidayCacheAlwaysTrading())
+
+    result = daemon.run_decision_cycle()
+
+    assert result["intents"] == []
+    diag_reasons = [d["reason"] for d in result.get("diagnostics", [])]
+    assert "market_not_eligible" in diag_reasons
+
+
+def test_ac15_nxt_session_absent_markets_suppresses_intent():
+    """REQ-005 AC-15c: NXT 전용 구간 + markets 필드 없음 → 보수 해석(["KRX"]) → intent 억제."""
+    now = datetime(2026, 6, 8, 16, 0, tzinfo=KST)
+    slot_row_no_markets = {
+        "slot_id": "slot-1", "status": "inactive", "symbol": "005930",
+        "qty": 0, "cash_balance": 1_000_000, "strategy_params": _TVR_PARAMS,
+        # no "markets" key
+    }
+    slot = StubSlotPort({"slots": [slot_row_no_markets], "degraded": False})
+    intent = StubIntentPort({"status": "admitted", "slot_id": "slot-1"})
+    daemon = _daemon_with_holiday(slot, intent, StubMarketData(2000), now, holiday_cache=_HolidayCacheAlwaysTrading())
+
+    result = daemon.run_decision_cycle()
+
+    assert result["intents"] == []
+    diag_reasons = [d["reason"] for d in result.get("diagnostics", [])]
+    assert "market_not_eligible" in diag_reasons

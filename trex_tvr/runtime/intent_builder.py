@@ -27,18 +27,32 @@ from typing import Optional
 from trex_tvr.strategies.base import BuySignal, SellSignal
 
 
-def make_intent_id(strategy_id: str, trading_date: str, slot_id: str) -> str:
-    """Deterministic idempotency key — one buy admission per slot per trading day."""
-    return f"{strategy_id}:{trading_date}:{slot_id}"
+def make_intent_id(
+    strategy_id: str,
+    trading_date: str,
+    slot_id: str,
+    instance_key: str = "default",
+) -> str:
+    """Deterministic idempotency key — one buy admission per (instance, slot) per trading day.
+
+    BAT-002 REQ-007: instance_key added to prevent cross-instance collision.
+    Format: `{strategy_id}:{instance_key}:{trading_date}:{slot_id}`
+    """
+    return f"{strategy_id}:{instance_key}:{trading_date}:{slot_id}"
 
 
-def make_sell_intent_id(strategy_id: str, trading_date: str, slot_id: str) -> str:
+def make_sell_intent_id(
+    strategy_id: str,
+    trading_date: str,
+    slot_id: str,
+    instance_key: str = "default",
+) -> str:
     """Deterministic sell idempotency key — `sell:` namespace separates from buy keys.
 
-    Sell intent_id rule: `sell:{strategy_id}:{trading_date}:{slot_id}`.
-    One sell admission per slot per trading day via trex-core dedup.
+    BAT-002 REQ-007: instance_key added to prevent cross-instance collision.
+    Format: `sell:{strategy_id}:{instance_key}:{trading_date}:{slot_id}`
     """
-    return f"sell:{strategy_id}:{trading_date}:{slot_id}"
+    return f"sell:{strategy_id}:{instance_key}:{trading_date}:{slot_id}"
 
 
 def build_buy_intent(
@@ -49,6 +63,7 @@ def build_buy_intent(
     stop_loss_pct: float,
     take_profit_pct: float,
     strategy_id: str,
+    instance_key: str = "default",
     timeout_sec: Optional[int] = None,
     slippage_pct: Optional[float] = None,
     sell_strategy_id: Optional[str] = None,
@@ -69,7 +84,7 @@ def build_buy_intent(
     entry = float(signal.entry_price)
     payload: dict = {
         "intent_type": "buy",
-        "intent_id": make_intent_id(strategy_id, trading_date, slot_id),
+        "intent_id": make_intent_id(strategy_id, trading_date, slot_id, instance_key),
         "slot_id": slot_id,
         "qty": int(signal.target_qty),
         "entry_price": int(signal.entry_price),
@@ -94,6 +109,7 @@ def build_sell_intent(
     trading_date: str,
     slot_id: str,
     strategy_id: str,
+    instance_key: str = "default",
 ) -> dict:
     """Map a SellSignal into a sell intent payload for trex-core.
 
@@ -114,7 +130,7 @@ def build_sell_intent(
         raise ValueError(f"sell intent qty must be a positive int (got {signal.qty!r})")
     return {
         "intent_type": "sell",
-        "intent_id": make_sell_intent_id(strategy_id, trading_date, slot_id),
+        "intent_id": make_sell_intent_id(strategy_id, trading_date, slot_id, instance_key),
         "slot_id": slot_id,
         "qty": int(signal.qty),
         "reason": signal.reason,
