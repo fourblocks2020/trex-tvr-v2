@@ -1,6 +1,6 @@
 # 0. 문서 상태
 
-- 상태: draft
+- 상태: confirmed
 - 문서 ID: dcy-002_20260704_execution-cadence-slot-fetch
 - 이슈명: tvr 실행 케이던스·슬롯 패치 아키텍처 (세션 윈도우·폴링·팬-인·백프레셔)
 - 작성 시각(KST): 2026-07-04
@@ -183,8 +183,8 @@
 - 사용자 결정 필요: [# 10. 사용자 결정 필요 항목 요약](#10-사용자-결정-필요-항목-요약)
 
 ## Freeze 플래그
-- Handoff Decision: 보류 (confirm-discovery **준비 완료** — Open OQ 0, 사장님 승인만 대기)
+- Handoff Decision: REQ Drafting 진행 가능
 - Handoff Rationale: 핵심 결정(세션·팬-인·케이던스) 사장님 확정 + **OQ-1/2 Answered(2026-07-04 KIS NXT 스펙 조사)** — additive 설계 가능 판정으로 trex-core/kdh REQ 범위 확정 가능. OQ-4 실측 완전 종료(실전 NXT 시세·주문·취소 전 경로 확정 2026-07-06) — **Open OQ 0개**, Freeze 가능. 신규 발견(NXT 선정종목 제한→유니버스 체크)은 FR에 반영 필요.
-- Ready for REQ Drafting: false
-- Confirmed By: TBD
-- Confirmed At (KST): TBD
+- Ready for REQ Drafting: true
+- Confirmed By: 사장님
+- Confirmed At (KST): 2026-07-06
