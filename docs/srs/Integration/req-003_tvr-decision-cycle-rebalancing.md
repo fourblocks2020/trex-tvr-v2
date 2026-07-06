@@ -1,6 +1,6 @@
 # req-003: TVR decision-cycle 리밸런싱형 확장 + slots strategy 필터
 
-- Status: Approved
+- Status: Implemented
 - Type: Integration
 - Priority: High
 - Owner: service-dev (tvr)
@@ -56,6 +56,24 @@
 - **시세 획득 인터페이스**: TVR은 분봉 candles 불필요 — `current_price`만 필요. `kis_data_hub_client.py`가 현재가 단독 조회를 제공하는지 확인 필요. 없으면 fetch_market_data()의 current_price 필드만 사용한다. 설계 단계에서 확정.
 
 ## Change Log
+
+### CHG-20260704-04
+- Date: 2026-07-04
+- Author: 팀장(Claude) — confirm-req-implemented
+
+#### Change Summary
+- Approved → **Implemented**: bat-001 구현 완료. 독립 QC PASS-WITH-NOTES(blocker 0, MAJOR 1건 수정 반영: REQ-003 AC-1 strategy 필터 wire 전달), 88 passed. PR #1 사장님 결재·머지(1eeac8d, 2026-07-04) = confirm-batch-verification 완료.
+- 검증 범위: fixture 기반 단독 검증. e2e(trex-core slots strategy 필터·portfolio-hub strategy_params 노출)는 타 repo REQ 배포 후 별도 확인.
+
+#### Acceptance Criteria Delta
+- Added/Updated/Removed: 없음
+
+#### Delivery Trace Delta
+- Batches: bat-001_20260704_tvr-rebalancing-v1 (merged, PR #1)
+
+#### Revalidation Impact
+- Reverification Needed: no / Existing Implementation Invalidated: no
+- Status Recommendation: Implemented
 
 ### CHG-20260704-02
 - Date: 2026-07-04

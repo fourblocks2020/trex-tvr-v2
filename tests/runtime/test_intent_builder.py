@@ -26,7 +26,8 @@ def test_ac1_build_sell_intent_fields():
                                 slot_id="slot-abc", strategy_id="tvr_v1")
 
     assert payload["intent_type"] == "sell"
-    assert payload["intent_id"] == "sell:tvr_v1:2026-07-04:slot-abc"
+    # BAT-002 REQ-007: intent_id now includes instance_key (default="default").
+    assert payload["intent_id"] == "sell:tvr_v1:default:2026-07-04:slot-abc"
     assert payload["slot_id"] == "slot-abc"
     assert payload["qty"] == 4
     assert payload["reason"] == "rebalance_sell"
@@ -48,7 +49,8 @@ def test_ac2_sell_intent_id_idempotent():
                             slot_id="slot-abc", strategy_id="tvr_v1")["intent_id"]
     id2 = build_sell_intent(signal, trading_date="2026-07-04",
                             slot_id="slot-abc", strategy_id="tvr_v1")["intent_id"]
-    assert id1 == id2 == "sell:tvr_v1:2026-07-04:slot-abc"
+    # BAT-002 REQ-007: intent_id now includes instance_key (default="default").
+    assert id1 == id2 == "sell:tvr_v1:default:2026-07-04:slot-abc"
 
 
 # ---------------------------------------------------------------------------
@@ -113,4 +115,5 @@ def test_sell_intent_id_namespace_prefix():
     """sell: prefix separates from buy intent_id namespace."""
     sell_id = make_sell_intent_id("tvr_v1", "2026-07-04", "slot-1")
     assert sell_id.startswith("sell:")
-    assert sell_id == "sell:tvr_v1:2026-07-04:slot-1"
+    # BAT-002 REQ-007: intent_id now includes instance_key (default="default").
+    assert sell_id == "sell:tvr_v1:default:2026-07-04:slot-1"

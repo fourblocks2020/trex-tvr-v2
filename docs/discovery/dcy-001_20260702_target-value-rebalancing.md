@@ -7,7 +7,7 @@
 - 마지막 갱신 시각(KST): 2026-07-04 (v6: REQ-001~004 초안 생성 역참조 추가. v5: 실행 케이던스(폴링 주기·병렬 worker·다중 core 인스턴스 팬-인·백프레셔)를 placeholder로 명시하고 실행/런타임 아키텍처 Discovery(dcy-002)로 분리. OQ-2 중 폴링 간격·세션 윈도우를 dcy-002로 이관. confirm-discovery Freeze 완료. v4: 리밸런스 트리거=밴드 상시 감시 확정(하루1회 폐기, 기존 구현과 동일). v3: per-포트폴리오 할당금액 모델 확정 — target_weight=아이템 할당 내 주식비중, 아이템별 독립 리밸런싱, 종목간 현금혼용·순서 없음)
 - 대체됨: 없음
 - 후속 Discovery 참조: **dcy-002**(tvr-v1 실행/런타임 아키텍처 — 폴링 케이던스·병렬 worker·다중 core 인스턴스 tvr_v1 슬롯 팬-인·백프레셔; 본 문서 OQ-2의 폴링 간격·세션 윈도우 이관) · v2(목표비중 동적조절, 별도 Discovery 예정)
-- 생성된 REQ 참조: REQ-001 (Interface/req-001_tvr-rebalancing-core-logic.md), REQ-002 (Interface/req-002_tvr-sell-intent-transport.md), REQ-003 (Integration/req-003_tvr-decision-cycle-rebalancing.md), REQ-004 (Non-Functional/req-004_tvr-observability-day1.md)
+- 생성된 REQ 참조: (cross-repo) portfolio-hub REQ-055(응답 노출·Approved), trex-core REQ-116(slots 필터·row 전달·Approved) + REQ-001 (Interface/req-001_tvr-rebalancing-core-logic.md), REQ-002 (Interface/req-002_tvr-sell-intent-transport.md), REQ-003 (Integration/req-003_tvr-decision-cycle-rebalancing.md), REQ-004 (Non-Functional/req-004_tvr-observability-day1.md)
 
 # 1. 계획 상태 요약
 

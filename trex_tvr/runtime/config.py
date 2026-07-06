@@ -93,10 +93,16 @@ class Config:
     exit: Optional[ExitConfig] = None
     strategy_params: dict[str, dict[str, Any]] = field(default_factory=dict)
     execution: ExecutionConfig = ExecutionConfig()
-    poll_interval_seconds: float = 30.0
+    # BAT-002 REQ-006: poll_interval replaces poll_interval_seconds (unit: seconds, int, floor 60s).
+    poll_interval: int = 60
     rpc_timeout_seconds: float = 5.0
     redis_url: str | None = None
     worker_count: int = 20
+    # BAT-002 REQ-005: session window (KST wall clock). Replaces schedule 09:15–15:20 placeholder.
+    session_start: str = "08:00"
+    session_end: str = "20:00"
+    # BAT-002 REQ-007: trex-core instance keys for fan-in. Single item = backward compat.
+    instances: list[str] = field(default_factory=lambda: ["default"])
 
 
 def _load_dotenv(config_path: str, env_file: Optional[str] = None) -> None:
@@ -257,6 +263,31 @@ def _from_mapping(raw: dict) -> Config:
     if worker_count < 1:
         raise ConfigError("worker_count must be >= 1")
 
+    # BAT-002 REQ-006: poll_interval (int, seconds). poll_interval_seconds is legacy fallback.
+    poll_interval_raw = raw.get("poll_interval", raw.get("poll_interval_seconds", 60))
+    try:
+        poll_interval = int(poll_interval_raw)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"poll_interval must be an integer: {exc}") from exc
+    if poll_interval < 1:
+        raise ConfigError("poll_interval must be >= 1")
+
+    # BAT-002 REQ-005: session window (KST wall clock).
+    session_start = str(raw.get("session_start", "08:00"))
+    session_end = str(raw.get("session_end", "20:00"))
+
+    # BAT-002 REQ-007: trex-core instance keys for fan-in.
+    instances_raw = raw.get("instances")
+    if instances_raw is None:
+        # Backward compat: single instance_key becomes the sole entry.
+        instances: list[str] = [str(raw.get("instance_key", "default"))]
+    elif isinstance(instances_raw, list):
+        if not instances_raw:
+            raise ConfigError("config 'instances' must be a non-empty list")
+        instances = [str(k) for k in instances_raw]
+    else:
+        raise ConfigError("config 'instances' must be a list of strings")
+
     return Config(
         instance_key=str(raw.get("instance_key", "default")),
         rabbitmq_url=str(rabbitmq_url),
@@ -266,8 +297,11 @@ def _from_mapping(raw: dict) -> Config:
         strategy_id=str(strategy_id),
         strategy_params=dict(strat_raw),
         execution=execution_cfg,
-        poll_interval_seconds=float(raw.get("poll_interval_seconds", 30.0)),
+        poll_interval=poll_interval,
         rpc_timeout_seconds=float(raw.get("rpc_timeout_seconds", 5.0)),
         redis_url=str(redis_url),
         worker_count=worker_count,
+        session_start=session_start,
+        session_end=session_end,
+        instances=instances,
     )

@@ -4,14 +4,23 @@
 # Shared infra + secrets live in .env (NOT here) — see config/.env.example.
 
 instance_key = "tvr-default"
-poll_interval_seconds = 30
+# BAT-002 REQ-006: poll_interval (seconds, int). 60s floor + no-sleep drain when cycle exceeds.
+poll_interval = 60  # seconds; minimum effective interval between cycle starts
 rpc_timeout_seconds = 5
 worker_count = 20
 
-# Schedule windows are KST "HH:MM", half-open [start, end). Cycle runs only inside.
+# BAT-002 REQ-007: trex-core instance keys for fan-in (list). Single item = backward compat.
+# instances = ["default"]           # single instance (default)
+# instances = ["longterm", "midterm"]  # multi-instance fan-in
+
+# BAT-002 REQ-005: session window (KST wall clock, 08:00–20:00 NXT full session).
+# session_start = "08:00"   # default; daemon active from this time
+# session_end   = "20:00"   # default; daemon active until this time
+
+# Schedule windows are KST "HH:MM". With REQ-005 session gate, set to full session window.
 [[schedule]]
-start = "09:15"
-end = "15:20"
+start = "08:00"
+end   = "20:00"
 
 # [strategy.tvr_v1]: TVR에는 런타임 설정만 — 리밸런싱 파라미터(target_weight,
 # rebalance_band_pct, min_trade_krw)는 portfolio-hub strategy_sets에서 관리하고

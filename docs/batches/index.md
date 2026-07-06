@@ -9,3 +9,4 @@
 | BAT ID | Profile | Status | Included REQ | Discovery | Folder |
 | --- | --- | --- | --- | --- | --- |
 | BAT-001 | standard | in-delivery | REQ-001, REQ-002, REQ-003, REQ-004 | dcy-001 | [bat-001_20260704_tvr-rebalancing-v1](./bat-001_20260704_tvr-rebalancing-v1/) |
+| BAT-002 | standard | in-delivery | REQ-005, REQ-006, REQ-007 | dcy-002 | [bat-002_20260706_session-cadence-fanin](./bat-002_20260706_session-cadence-fanin/) |

@@ -43,3 +43,9 @@ day-1 관측성(status/health 스냅샷)도 함께 탑재한다.
   e2e wire 연동은 trex-core 해당 변경 배포 후 통합 테스트에서 수행(REQ-003 Notes 명시).
 - tvr 배포 시 trex-core 미배포 상태에서는 모든 슬롯이 missing_strategy_params 폴백으로 스킵됨(의도된 후방호환).
 - bat-001 완료 후 trex-core·portfolio-hub REQ 별도 추적 필요.
+
+
+## Confirm 기록 (팀장)
+- **confirm-batch-verification: 2026-07-04 완료.** 독립 QC(qc-reviewer) PASS-WITH-NOTES(blocker 0) → MAJOR 1건(REQ-003 AC-1 strategy 필터 wire 전달) dev 수정 + 실검증 테스트 7개 추가 → 88 passed 재확인 → 팀장 검수 → **사장님 PR #1 머지 결재(1eeac8d)**.
+- confirm-req-implemented: REQ-001~004 → Implemented (각 REQ CHG-20260704-04).
+- 잔여 부채(비차단): REQ-004 AC-4/5 transport 에러 통합검증(코드 구현·문서 명시), intent_builder exit 파라미터 리팩터 후보.

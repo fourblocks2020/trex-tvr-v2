@@ -1,6 +1,6 @@
 # req-002: TVR sell-intent 경로 신설
 
-- Status: Approved
+- Status: Implemented
 - Type: Interface
 - Priority: High
 - Owner: service-dev (tvr)
@@ -52,6 +52,24 @@
 - **stop_loss / take_profit 미선언 설계 의도**: TVR은 순수 리밸런싱 전략이다. 매도는 trex-core의 safety-sell이 아니라 TVR이 직접 발신하며, exit 임계는 포함하지 않는다(dcy-001 스코프 정의). 단, trex-core가 HOLDING 슬롯에 기존 SL/TP가 설정된 경우 충돌 가능성이 있다 — 설계 단계에서 확인 필요(설계 인계 사안).
 
 ## Change Log
+
+### CHG-20260704-04
+- Date: 2026-07-04
+- Author: 팀장(Claude) — confirm-req-implemented
+
+#### Change Summary
+- Approved → **Implemented**: bat-001 구현 완료. 독립 QC PASS-WITH-NOTES(blocker 0, MAJOR 1건 수정 반영: REQ-003 AC-1 strategy 필터 wire 전달), 88 passed. PR #1 사장님 결재·머지(1eeac8d, 2026-07-04) = confirm-batch-verification 완료.
+- 검증 범위: fixture 기반 단독 검증. e2e(trex-core slots strategy 필터·portfolio-hub strategy_params 노출)는 타 repo REQ 배포 후 별도 확인.
+
+#### Acceptance Criteria Delta
+- Added/Updated/Removed: 없음
+
+#### Delivery Trace Delta
+- Batches: bat-001_20260704_tvr-rebalancing-v1 (merged, PR #1)
+
+#### Revalidation Impact
+- Reverification Needed: no / Existing Implementation Invalidated: no
+- Status Recommendation: Implemented
 
 ### CHG-20260704-02
 - Date: 2026-07-04
