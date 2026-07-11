@@ -257,6 +257,46 @@ cd <trex-tvr-v1 배포 디렉토리>
 - `kis-data-hub` REQ-069~071의 v2 stale=True + Redis hit 경로 market 미적용 한계는 후속 권고사항이다. TVR release에서는 stale quote를 보수적으로 다루고, NXT 실거래 전 smoke로 보완한다.
 - NXT extended-session spread/limit 보호장치는 M5 후속이다. M4 첫 릴리즈에서 NXT를 실제로 켤 경우 소액 smoke와 운영자 감시를 필수로 한다.
 
+## Independent Release Draft Review
+
+### REV-20260711-01 — qc-style read-only review
+
+- Date: 2026-07-11
+- Reviewer: independent delegated review
+- Verdict: **FAIL — 현 상태로 confirm-release 진행 금지**
+
+#### 확인된 정상 근거
+
+- REL-001 draft 및 release index 등록 확인.
+- BAT-001/BAT-002 release-candidate 정렬 확인.
+- REQ-001~007 Implemented 확인.
+- TVR 테스트 재실행: `154 passed in 0.53s`.
+- GitHub Project M4 메인 카드 `Release-Pending` 확인.
+
+#### confirm-release 전 필수 blocker
+
+1. **local ahead commit 미푸시**: `portfolio-hub`, `trex-core`, `kis-data-hub`, `trex-tvr-v1` 문서/릴리즈 커밋 push 필요.
+2. **cross-repo e2e wire 검증 미실행**: 본 문서 release 전 e2e smoke 체크리스트 PASS 필요.
+3. **운영 config / strategy_params / markets 미확정**: 실제 운영 대상 portfolio/strategy_set/config 확인 필요.
+4. **trex-core 재시작 계획 필요**: intent_id 포맷 전환에 따른 admitted/in-flight 초기화 계획 확정 필요.
+5. **NXT 정책 결정 필요**: NXT 비활성 시작 또는 KRX+NXT 소액 주문/취소/체결조회 smoke PASS 후 활성화 중 하나로 확정 필요.
+
+#### WARN / 문서 불일치
+
+- BAT-001/BAT-002 `verification.md` 일부 문구가 stale 상태(`draft`, `Ready for Release: false`, `READY FOR QC-REVIEWER`)를 유지한다.
+- 최신 source는 batch index confirm 기록, SRS index, 본 release draft다. confirm-release 메모에서 stale verification 문구를 명시적으로 무효화하거나 별도 문서 정리를 수행한다.
+- cross-repo repos의 untracked `.claude/settings.local.json`는 stage 금지.
+
+#### 권고 게이트 순서
+
+1. git-ops push 승인/실행.
+2. 운영 baseline sync 확인.
+3. 운영 config/strategy_set/markets 확정.
+4. cross-repo e2e smoke 수행.
+5. trex-core restart 계획 확정.
+6. NXT 정책 확정.
+7. 위 evidence를 Release Execution Evidence 또는 confirm-release 메모에 기록 후 confirm-release 진행.
+
 ## Release Execution Evidence
 
 *(confirm-release 및 실제 배포 후 채움)*
