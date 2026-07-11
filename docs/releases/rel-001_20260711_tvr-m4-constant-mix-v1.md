@@ -393,6 +393,39 @@ cd <trex-tvr-v1 배포 디렉토리>
 6. NXT 정책 확정 — 완료: M4 첫 릴리즈 KRX 전용.
 7. 위 evidence를 Release Execution Evidence 또는 confirm-release 메모에 기록 후 confirm-release 진행.
 
+## Ops Preflight Evidence
+
+### OPS-20260711-01 — TVR 제외 선행 서비스 preflight 회신
+
+- Source: `deploy-20260711-235309-adhraof5m3dx3quqinihanqw6w.md`
+- Verdict: **FAIL / preflight 미종결**
+
+#### 확인된 정상 근거
+
+- `portfolio-hub`: 운영 DB 기준 portfolio 146/146 모두 `markets=["KRX"]`, dangling join 없음.
+- `kis-data-hub`: health / quote / stale 경로는 정상 신호. KRX quote read 특이사항 없음.
+
+#### blocker
+
+1. **운영 checkout HEAD가 기대 baseline보다 오래됨**
+   - `portfolio-hub`: expected `6b695b8`, current `9dcd00f` — current는 expected의 ancestor.
+   - `trex-core`: expected `7845fbe`, current `314047b` — current는 expected의 ancestor.
+   - `kis-data-hub`: expected `5078b34`, current `6935920` — current는 expected의 ancestor.
+   - 결론: 세 서비스 모두 TVR M4 prerequisite commit이 아직 운영 checkout에 반영되지 않았다.
+2. **운영 API/RPC 계약 증거 부족**
+   - `portfolio-hub` 운영 API/OpenAPI에서 `strategy_name` / `strategy_params` / `markets` 노출 미확인.
+   - `trex-core` 실제 `slots.req` row에 `strategy_name` / `strategy_params` / `markets` 필드 없음.
+   - `strategy=tvr_v1` payload가 런타임 계약상 어떻게 반영되는지 증빙 부족.
+3. **TVR 설정값 사전 미구성은 blocker가 아니지만, 배포 시점 반영 절차/기준 commit 확정 필요**
+   - TVR 값은 배포 시점 최종 결정 가능.
+   - 단, 선행 서비스가 기대 baseline에 올라간 후 동일 preflight를 재수행해야 한다.
+
+#### 팀장 판정
+
+- `trex-tvr-v1` 배포 가이드 작성은 진행 가능.
+- 그러나 confirm-release 또는 운영 배포 GO는 불가.
+- 다음 순서: TVR 제외 선행 서비스 3개를 기대 baseline 이상으로 배포/동기화 → preflight 재실행 → TVR 배포 가이드 기준으로 `trex-tvr-v1` 배포 준비.
+
 ## Release Execution Evidence
 
 *(confirm-release 및 실제 배포 후 채움)*
