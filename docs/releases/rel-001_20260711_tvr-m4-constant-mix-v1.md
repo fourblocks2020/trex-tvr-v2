@@ -62,7 +62,7 @@ v1의 핵심은 신규 데이터 소스 없이 현재 보유/현금/현재가와
 
 | ID | Blocker | 처리 필요 |
 | --- | --- | --- |
-| B-1 | 4개 repo의 `confirm-req-implemented` 문서 커밋이 local `main...origin/main [ahead 1]` | 사장님 지시 후 git-ops가 push |
+| B-1 | 4개 repo의 `confirm-req-implemented` 문서 커밋이 local `main...origin/main [ahead 1]` | **해소됨 — 2026-07-11 git-ops push 완료** |
 | B-2 | cross-repo e2e wire 검증 미실행 | release 전 QC/e2e 체크리스트 수행 |
 | B-3 | `trex-core` intent_id 포맷 전환에 따른 admitted/in-flight 상태 | 배포 전 `trex-core` 재시작 계획 필요 |
 | B-4 | NXT 라이브 사용 전 `poll_fill` 구 TR의 NXT 체결 포함 여부 미확인 | KRX+NXT 소액 스모크로 확인 |
@@ -275,7 +275,7 @@ cd <trex-tvr-v1 배포 디렉토리>
 
 #### confirm-release 전 필수 blocker
 
-1. **local ahead commit 미푸시**: `portfolio-hub`, `trex-core`, `kis-data-hub`, `trex-tvr-v1` 문서/릴리즈 커밋 push 필요.
+1. **local ahead commit 미푸시**: `portfolio-hub`, `trex-core`, `kis-data-hub`, `trex-tvr-v1` 문서/릴리즈 커밋 push 필요. **해소됨 — 2026-07-11 git-ops push 완료.**
 2. **cross-repo e2e wire 검증 미실행**: 본 문서 release 전 e2e smoke 체크리스트 PASS 필요.
 3. **운영 config / strategy_params / markets 미확정**: 실제 운영 대상 portfolio/strategy_set/config 확인 필요.
 4. **trex-core 재시작 계획 필요**: intent_id 포맷 전환에 따른 admitted/in-flight 초기화 계획 확정 필요.
