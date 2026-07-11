@@ -1,6 +1,6 @@
 # BAT-001: TVR v1 리밸런싱 코어 구현
 
-- Status: in-delivery
+- Status: release-candidate (confirm-batch-verification 완료, PR #1 merged, REQ-001~004 Implemented)
 - Profile: standard
 - Source Discovery: dcy-001
 - Included REQ: REQ-001, REQ-002, REQ-003, REQ-004

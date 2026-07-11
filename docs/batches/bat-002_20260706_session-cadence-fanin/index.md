@@ -1,6 +1,6 @@
 # BAT-002: 세션 캘린더 + 케이던스 + 다중 인스턴스 팬-인
 
-- Status: in-delivery
+- Status: release-candidate (confirm-batch-verification 완료, PR #2 merged, REQ-005~007 Implemented)
 - Profile: standard
 - Source Discovery: dcy-002
 - Included REQ: REQ-005, REQ-006, REQ-007
@@ -39,3 +39,9 @@ dcy-002(실행 케이던스·슬롯 패치·팬-인) delivery batch.
 - REQ-005의 markets 게이트는 tvr 소비 쪽 계약만 구현. wire 배관(portfolio-hub→trex-core→tvr) 미배포 시 markets=[] → 보수 해석(["KRX"])으로 폴백 — NXT 전용 구간 intent 억제.
 - REQ-007의 intent_id 포맷 변경(`{strategy}:{instance}:{date}:{slot}`)은 기존 in-flight intent와 충돌 가능. 배포 시 admitted 초기화로 충분한지 design.md에서 평가.
 - kdh NX/UN 현재가 미배포 시 NXT 전용 구간 fetch 실패 → 해당 cycle HOLD 폴백(슬롯 Diagnostic reason="quote_unavailable").
+
+## Confirm 기록 (팀장)
+
+- **confirm-batch-verification: 2026-07-06 완료.** 독립 QC PASS-WITH-NOTES(blocker 0) — AC 33/33, `154 passed`, import sweep clean. PR #2 사장님 결재·머지(`2c484cf`).
+- confirm-req-implemented: REQ-005~007 → Implemented (`c8dc15a`, local main; origin push 대기).
+- 배포 게이트: TVR intent_id 포맷 전환 전 `trex-core` 재시작으로 admitted/in-flight 상태 초기화. NXT 라이브 사용 전 KRX+NXT 소액 스모크 필요.
