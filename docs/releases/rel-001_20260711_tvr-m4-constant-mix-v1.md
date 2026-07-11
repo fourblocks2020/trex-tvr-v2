@@ -64,7 +64,7 @@ v1의 핵심은 신규 데이터 소스 없이 현재 보유/현금/현재가와
 | --- | --- | --- |
 | B-1 | 4개 repo의 `confirm-req-implemented` 문서 커밋이 local `main...origin/main [ahead 1]` | **해소됨 — 2026-07-11 git-ops push 완료** |
 | B-2 | cross-repo e2e wire 검증 미실행 | release 전 QC/e2e 체크리스트 수행 |
-| B-3 | `trex-core` intent_id 포맷 전환에 따른 admitted/in-flight 상태 | 배포 전 `trex-core` 재시작 계획 필요 |
+| B-3 | `trex-core` intent_id 포맷 전환에 따른 admitted/in-flight 상태 | **계획 수립됨 — 아래 KRX-only rollout gate의 trex-core graceful restart 순서 적용. 실행은 confirm-release/배포 시점** |
 | B-4 | NXT 라이브 사용 전 `poll_fill` 구 TR의 NXT 체결 포함 여부 미확인 | **해소/범위제외 — M4 첫 릴리즈는 KRX 전용. NXT 활성화는 M5 또는 별도 smoke PASS 후 진행** |
 | B-5 | 운영 config 확정 필요 | TVR daemon config, instances, schedule/session, strategy_params, markets 확인 |
 
@@ -134,6 +134,102 @@ v1의 핵심은 신규 데이터 소스 없이 현재 보유/현금/현재가와
 - [ ] 동일 slot_id가 다른 instance에 있어도 intent_id가 instance_key로 구분됨
 - [ ] M4 첫 운영은 KRX 전용이므로 NXT 전용 시간대 intent 발신이 억제됨
 - [ ] NXT 라이브는 비활성 상태로 시작함을 운영 config/절차에 명시
+
+## KRX-only pre-confirm gates (M4)
+
+M4 첫 릴리즈는 KRX 전용이다. 따라서 confirm-release 전에 NXT smoke를 요구하지 않고, **NXT 비활성/억제 상태가 보장되는지**를 확인한다.
+
+### 운영 config 기준
+
+운영 TOML은 아래 조건을 만족해야 한다. 실제 secret/URL은 `.env` 또는 환경변수로 주입하고 릴리즈 문서에 원문 값을 남기지 않는다.
+
+```toml
+instance_key = "<tvr-instance-key>"
+instances = ["<trex-core-instance-key>"]
+poll_interval = 60
+rpc_timeout_seconds = 5
+worker_count = 20
+session_start = "08:00"
+session_end = "20:00"
+
+[[schedule]]
+start = "08:00"
+end = "20:00"
+
+[strategy.tvr_v1]
+# target_weight / rebalance_band_pct / min_trade_krw는 portfolio-hub strategy_sets에서 전달
+
+[execution]
+timeout_sec = 30
+slippage_pct = 0.5
+```
+
+환경변수/`.env` 필수 항목:
+
+```text
+TREX_RABBITMQ_URL=[REDACTED]
+KIS_DATA_HUB_BASE_URL=<kdh internal URL>
+KIS_DATA_HUB_API_KEY=[REDACTED or empty if unused]
+KIS_DATA_HUB_ALLOW_STALE=false
+TREX_REDIS_URL=[REDACTED]
+TREX_TVR_STATUS_PATH=<운영 status JSON 경로, 선택>
+```
+
+팀장 로컬 config parser smoke:
+
+```text
+strategy_id= tvr_v1
+instance_key= tvr-m4-krx
+instances= ['longterm']
+poll_interval= 60
+schedule= [('08:00', '20:00')]
+allow_stale= False
+execution= ExecutionConfig(timeout_sec=30, slippage_pct=0.5)
+```
+
+### KRX-only data policy
+
+- portfolio-hub 대상 assets의 `markets`는 `[]` 또는 `['KRX']`로 시작한다.
+- `markets=[]`는 TVR에서 보수적으로 KRX only로 해석된다.
+- `markets`에 `NXT`가 포함된 슬롯은 M4 첫 릴리즈 대상에서 제외한다.
+- NXT 전용 구간(PRE_MARKET/AFTER_SINGLE/AFTER_MARKET)에서는 KRX-only 슬롯이 `market_not_eligible` 진단으로 intent 발신되지 않아야 한다.
+
+### trex-core restart plan
+
+`trex-tvr-v1` BAT-002에서 intent_id 포맷이 instance-aware로 바뀌었다.
+
+```text
+buy:  {strategy}:{instance}:{date}:{slot}
+sell: sell:{strategy}:{instance}:{date}:{slot}
+```
+
+배포 절차:
+
+1. TVR 데몬이 아직 기동 중이면 중지한다.
+2. 기존 trex-core 장기 인스턴스를 graceful stop한다.
+3. 프로세스 종료와 RabbitMQ consumer 정리를 확인한다.
+4. trex-core를 origin/main 최신 코드로 재기동한다.
+5. slots/intent 큐가 정상 bind되는지 확인한다.
+6. 그 다음 TVR 데몬을 기동한다.
+
+의도:
+
+- trex-core in-memory admitted/in-flight intent 상태를 초기화한다.
+- 영구 slot/portfolio 상태는 DB에 유지되므로, 재기동 후 이미 보유 중인 슬롯은 already_active/holding 경로로 재수렴한다.
+- 재시작 자체는 confirm-release/배포 승인 이후 실행한다. 현재 단계에서는 계획 확정까지만 수행한다.
+
+### Release 전 e2e smoke 최소 기준
+
+실제 운영/스테이징 환경에서 다음을 확인해야 confirm-release로 넘어갈 수 있다.
+
+1. `portfolio-hub` `/v1/portfolios` 응답에 대상 portfolio의 `strategy_name=tvr_v1`, `strategy_params`, `markets`가 존재한다.
+2. `trex-core` `trex.slots.req`에 `strategy='tvr_v1'` 요청 시 TVR 대상 슬롯만 반환된다.
+3. 반환 slot row에 `strategy_params.target_weight`, `rebalance_band_pct`, `min_trade_krw`가 포함된다.
+4. `markets`가 `[]` 또는 `['KRX']`로 확인된다.
+5. TVR dry/smoke cycle에서 `missing_strategy_params` 반복 없이 평가된다.
+6. KRX MAIN 구간 또는 clock-injected smoke에서 BuyIntent/SellIntent payload가 정상 생성된다.
+7. intent_id에 instance_key가 포함된다.
+8. NXT 전용 구간에서는 KRX-only 슬롯 intent가 억제된다.
 
 ## Rollout Plan
 
@@ -278,7 +374,7 @@ cd <trex-tvr-v1 배포 디렉토리>
 1. **local ahead commit 미푸시**: `portfolio-hub`, `trex-core`, `kis-data-hub`, `trex-tvr-v1` 문서/릴리즈 커밋 push 필요. **해소됨 — 2026-07-11 git-ops push 완료.**
 2. **cross-repo e2e wire 검증 미실행**: 본 문서 release 전 e2e smoke 체크리스트 PASS 필요.
 3. **운영 config / strategy_params / markets 미확정**: 실제 운영 대상 portfolio/strategy_set/config 확인 필요.
-4. **trex-core 재시작 계획 필요**: intent_id 포맷 전환에 따른 admitted/in-flight 초기화 계획 확정 필요.
+4. **trex-core 재시작 계획 필요**: **계획 수립됨 — KRX-only pre-confirm gates의 restart plan 적용. 실제 재시작은 confirm-release/배포 승인 후 실행.**
 5. **NXT 정책 결정 필요**: **해소됨 — M4 첫 릴리즈는 KRX 전용, NXT 비활성 시작.**
 
 #### WARN / 문서 불일치
