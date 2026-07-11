@@ -16,7 +16,7 @@ v1의 핵심은 신규 데이터 소스 없이 현재 보유/현금/현재가와
 - `inactive` 슬롯: 목표비중 대비 부족분을 매수 intent로 발행
 - `holding` 슬롯: 목표비중 대비 초과분을 부분매도 sell intent로 발행
 - 최소거래금액·whole-share·cash constraint·oversell clamp로 과도한 거래를 방지
-- 08:00~20:00 세션 캘린더와 NXT 시장 게이트를 인지하되, NXT 실거래 사용 전에는 별도 스모크 게이트를 둔다
+- 08:00~20:00 세션 캘린더와 NXT 시장 게이트를 인지하지만, **M4 첫 릴리즈 운영은 KRX 전용으로 시작한다**. NXT 실거래 활성화는 M5 또는 별도 KRX+NXT smoke PASS 후 진행한다.
 
 ## Scope
 
@@ -65,7 +65,7 @@ v1의 핵심은 신규 데이터 소스 없이 현재 보유/현금/현재가와
 | B-1 | 4개 repo의 `confirm-req-implemented` 문서 커밋이 local `main...origin/main [ahead 1]` | **해소됨 — 2026-07-11 git-ops push 완료** |
 | B-2 | cross-repo e2e wire 검증 미실행 | release 전 QC/e2e 체크리스트 수행 |
 | B-3 | `trex-core` intent_id 포맷 전환에 따른 admitted/in-flight 상태 | 배포 전 `trex-core` 재시작 계획 필요 |
-| B-4 | NXT 라이브 사용 전 `poll_fill` 구 TR의 NXT 체결 포함 여부 미확인 | KRX+NXT 소액 스모크로 확인 |
+| B-4 | NXT 라이브 사용 전 `poll_fill` 구 TR의 NXT 체결 포함 여부 미확인 | **해소/범위제외 — M4 첫 릴리즈는 KRX 전용. NXT 활성화는 M5 또는 별도 smoke PASS 후 진행** |
 | B-5 | 운영 config 확정 필요 | TVR daemon config, instances, schedule/session, strategy_params, markets 확인 |
 
 ## 배포 의존성 / 순서
@@ -91,7 +91,7 @@ v1의 핵심은 신규 데이터 소스 없이 현재 보유/현금/현재가와
 
 1. `portfolio-hub`가 strategy/market meta를 먼저 실어줘야 한다.
 2. `trex-core`가 해당 meta를 slots row로 흘려주고 strategy 필터를 처리해야 한다.
-3. `kis-data-hub`가 market `J/NX/UN` 현재가 요청을 받아야 NXT/UN quote 경로가 열린다.
+3. `kis-data-hub`가 market `J/NX/UN` 현재가 요청을 받을 수 있어야 한다. 단, M4 첫 운영은 KRX 전용이므로 기본 `J` 경로를 사용하고 `NX/UN` 실거래 활성화는 후속으로 둔다.
 4. `trex-tvr-v1`는 위 계약을 소비해 strategy_params 기반 리밸런싱을 수행한다.
 
 ## 사전 조건 체크리스트
@@ -132,8 +132,8 @@ v1의 핵심은 신규 데이터 소스 없이 현재 보유/현금/현재가와
 - [ ] 매수 후보 슬롯에서 BuyIntent payload 생성 확인
 - [ ] 보유 초과 슬롯에서 SellIntent payload 생성 확인
 - [ ] 동일 slot_id가 다른 instance에 있어도 intent_id가 instance_key로 구분됨
-- [ ] NXT 전용 시간대에서 `markets`에 `NXT`가 없으면 intent 발신 억제됨
-- [ ] NXT 라이브 사용 전 KRX+NXT 각 1건 소액 주문/취소/체결조회 smoke 계획 승인
+- [ ] M4 첫 운영은 KRX 전용이므로 NXT 전용 시간대 intent 발신이 억제됨
+- [ ] NXT 라이브는 비활성 상태로 시작함을 운영 config/절차에 명시
 
 ## Rollout Plan
 
@@ -216,8 +216,8 @@ cd <trex-tvr-v1 배포 디렉토리>
 ### order path smoke
 
 - [ ] KRX 경로 소액 주문/취소/체결조회 smoke PASS
-- [ ] NXT 경로 사용 전 소액 주문/취소/체결조회 smoke PASS 또는 NXT 사용 비활성화 유지
-- [ ] `poll_fill`이 NXT 체결을 포함하지 않는 것으로 확인되면 NXT 실거래 비활성화 후 후속 batch 생성
+- [ ] NXT 사용 비활성화 유지 확인 — KRX 전용 운영
+- [ ] NXT 활성화 필요 시 M5/후속 batch에서 소액 주문/취소/체결조회 smoke 및 `poll_fill` 검증 수행
 
 ### 첫 거래일 운영 감시
 
@@ -238,7 +238,7 @@ cd <trex-tvr-v1 배포 디렉토리>
 - `strategy_params` 누락으로 전체 슬롯 평가 불가
 - 잘못된 인스턴스 큐로 intent routing
 - 과매수/과매도 의심 수량 발생
-- NXT 주문/취소/체결조회 smoke 실패 후 NXT 경로가 계속 활성화됨
+- M4 KRX 전용 정책에도 NXT 경로가 활성화됨
 - trex-core 주문 경로 회귀 또는 orb/tsl 영향 관측
 
 ### 롤백 절차
@@ -254,8 +254,8 @@ cd <trex-tvr-v1 배포 디렉토리>
 
 - `trex-tvr-v1` BAT-001 REQ-004 AC-4/5 transport error/reconnect deps 갱신은 코드 구현됐으나 실제 transport 통합 검증은 제한적이다. release smoke에서 status/deps 갱신을 확인한다.
 - `portfolio-hub` REQ-055 dangling FK LEFT JOIN NULL 실DB 확인은 배포 후 통합검증 권장사항이며 release blocker는 아니다.
-- `kis-data-hub` REQ-069~071의 v2 stale=True + Redis hit 경로 market 미적용 한계는 후속 권고사항이다. TVR release에서는 stale quote를 보수적으로 다루고, NXT 실거래 전 smoke로 보완한다.
-- NXT extended-session spread/limit 보호장치는 M5 후속이다. M4 첫 릴리즈에서 NXT를 실제로 켤 경우 소액 smoke와 운영자 감시를 필수로 한다.
+- `kis-data-hub` REQ-069~071의 v2 stale=True + Redis hit 경로 market 미적용 한계는 후속 권고사항이다. M4 첫 TVR release는 KRX 전용으로 시작해 NXT/UN 경로 리스크를 운영 범위에서 제외한다.
+- NXT extended-session spread/limit 보호장치는 M5 후속이다. M4 첫 릴리즈에서는 NXT를 켜지 않는다.
 
 ## Independent Release Draft Review
 
@@ -279,7 +279,7 @@ cd <trex-tvr-v1 배포 디렉토리>
 2. **cross-repo e2e wire 검증 미실행**: 본 문서 release 전 e2e smoke 체크리스트 PASS 필요.
 3. **운영 config / strategy_params / markets 미확정**: 실제 운영 대상 portfolio/strategy_set/config 확인 필요.
 4. **trex-core 재시작 계획 필요**: intent_id 포맷 전환에 따른 admitted/in-flight 초기화 계획 확정 필요.
-5. **NXT 정책 결정 필요**: NXT 비활성 시작 또는 KRX+NXT 소액 주문/취소/체결조회 smoke PASS 후 활성화 중 하나로 확정 필요.
+5. **NXT 정책 결정 필요**: **해소됨 — M4 첫 릴리즈는 KRX 전용, NXT 비활성 시작.**
 
 #### WARN / 문서 불일치
 
@@ -294,7 +294,7 @@ cd <trex-tvr-v1 배포 디렉토리>
 3. 운영 config/strategy_set/markets 확정.
 4. cross-repo e2e smoke 수행.
 5. trex-core restart 계획 확정.
-6. NXT 정책 확정.
+6. NXT 정책 확정 — 완료: M4 첫 릴리즈 KRX 전용.
 7. 위 evidence를 Release Execution Evidence 또는 confirm-release 메모에 기록 후 confirm-release 진행.
 
 ## Release Execution Evidence
