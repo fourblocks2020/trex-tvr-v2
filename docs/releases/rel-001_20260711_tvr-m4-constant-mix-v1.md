@@ -1,6 +1,6 @@
 # REL-001: TVR M4 constant-mix v1 첫 릴리즈
 
-- Status: draft
+- Status: released (confirm-release, 2026-07-12; deployed idle, strategy cutover pending)
 - Profile: app-service
 - Included Batch: BAT-001, BAT-002
 - Draft Date: 2026-07-11
@@ -63,10 +63,10 @@ v1의 핵심은 신규 데이터 소스 없이 현재 보유/현금/현재가와
 | ID | Blocker | 처리 필요 |
 | --- | --- | --- |
 | B-1 | 4개 repo의 `confirm-req-implemented` 문서 커밋이 local `main...origin/main [ahead 1]` | **해소됨 — 2026-07-11 git-ops push 완료** |
-| B-2 | cross-repo e2e wire 검증 미실행 | release 전 QC/e2e 체크리스트 수행 |
+| B-2 | cross-repo e2e wire 검증 미실행 | **해소됨 — 2026-07-12 배포 후 portfolio-hub/trex-core/kdh 계약 확인. 단 TVR 대상 슬롯은 아직 0개라 first active cycle은 feedback 후속** |
 | B-3 | `trex-core` intent_id 포맷 전환에 따른 admitted/in-flight 상태 | **계획 수립됨 — 아래 KRX-only rollout gate의 trex-core graceful restart 순서 적용. 실행은 confirm-release/배포 시점** |
 | B-4 | NXT 라이브 사용 전 `poll_fill` 구 TR의 NXT 체결 포함 여부 미확인 | **해소/범위제외 — M4 첫 릴리즈는 KRX 전용. NXT 활성화는 M5 또는 별도 smoke PASS 후 진행** |
-| B-5 | 운영 config 확정 필요 | TVR daemon config, instances, schedule/session, strategy_params, markets 확인 |
+| B-5 | 운영 config 확정 필요 | **해소됨 — `/root/release/trex-tvr-v1/config/tvr-m4-krx.toml`, KRX-only, `instances=["genichin-longterm"]`. 단 portfolio TVR cutover는 후속 운영 조치** |
 
 ## 배포 의존성 / 순서
 
@@ -428,45 +428,91 @@ cd <trex-tvr-v1 배포 디렉토리>
 
 ## Release Execution Evidence
 
-*(confirm-release 및 실제 배포 후 채움)*
+### OPS-20260712-01 — M4 TVR KRX-only 배포 실행 결과
 
-- Release Status Transition Target: released 또는 feedback-captured
+- Source: 운영팀 실행 결과, 작성시각 2026-07-12 00:37:59 KST
+- 기준 문서: `/root/.hermes/cache/documents/doc_35a8bdaf779d_m4-tvr-krx-only-deployment-request-x8byf4njzbnw3d6qncbgasitoh.md`
+- 팀장 판정: **confirm-release 가능 / release status = released**
+- 단서: 코드·프로세스 배포는 성공했으나, 운영 데이터는 아직 `tvr_v1`로 cutover되지 않아 TVR은 정상 idle 상태. first active cycle은 release feedback 후속으로 추적한다.
 
-### Deployment Facts
+#### Deployment Facts
 
-- Executed At:
-  - TBD
-- Completed At:
-  - TBD
-- Environment:
-  - production / release host
-- Operator:
-  - TBD
-- Revision or Artifact:
-  - portfolio-hub: TBD
-  - kis-data-hub: TBD
-  - trex-core: TBD
-  - trex-tvr-v1: TBD
-- Commands or Procedure:
-  - 위 Rollout Plan 참조
+- Executed / Completed: 2026-07-12 00:37:59 KST 보고 기준 완료
+- Environment: production / release host
+- Deployed Revisions:
+  - `portfolio-hub`: `6b695b8`
+  - `kis-data-hub`: `5078b34`
+  - `trex-core`: `7845fbe`
+  - `trex-tvr-v1`: `598ced4`
+- Commands / Procedure:
+  - `bash /root/release/scripts/deploy-portfolio-hub.sh`
+  - `bash /root/release/scripts/deploy-kis-data-hub.sh`
+  - `bash /root/release/scripts/deploy-trex-core.sh`
+  - `trex-tvr-v1` 신규 clone, `.venv`, `pip install -e .`, config/env 작성, supervisor 등록/기동
 
-### Profile-Specific Checks
+#### Service Health / Process Evidence
 
-- app-service health/status:
-  - TBD
-- Smoke / manual verification:
-  - TBD
-- First trading day verification:
-  - TBD
+- `./scripts/status-all.sh --json` → `overall_ok=true`
+- `trex-tvr-v1` 포함 전체 10개 프로세스 `RUNNING`
+- `portfolio-hub` health: `http://127.0.0.1:8002/health` → `200`
+- `kis-data-hub` health: `http://127.0.0.1:8003/health` → `200`
 
-### Rollback Outcome
+#### Cross-repo Contract Evidence
 
-- Rollback Required:
-  - TBD
-- Rollback Trigger:
-  - TBD
-- Rollback Action:
-  - TBD
+- `portfolio-hub` OpenAPI `PortfolioItem` field 확인:
+  - `active_strategy_id`
+  - `strategy_name`
+  - `strategy_params`
+  - `markets`
+- 인증된 `/v1/portfolios` 실응답에서도 위 필드 노출 확인.
+- 운영 데이터 요약:
+  - total portfolios: `146`
+  - `strategy_name` 분포: `target_value=146`
+  - `tvr_v1` 또는 TVR 파라미터 대상: `0`
+- `trex-core` `slots.req` row field 확인:
+  - `strategy_name`
+  - `strategy_params`
+  - `markets`
+- `genichin-longterm` slot counts:
+  - `filter=inactive,holding` → `slot_count=1`
+  - `strategy=target_value` → `slot_count=1`
+  - `strategy=tvr_v1` → `slot_count=0`
+- 판정: wire 계약은 열렸고 동작 증거가 있다. 단 현재 운영 데이터 기준 TVR 대상 슬롯은 없다.
+- `kis-data-hub`: 인증된 `POST /v1/quotes/latest` 성공, sample `005930`, `stale=false`, live quote 정상.
+
+#### trex-tvr-v1 Runtime Evidence
+
+- supervisor status: `RUNNING`
+- status snapshot:
+  - `deps.rabbitmq=ok`
+  - `deps.kis_data_hub=ok`
+  - `deps.redis=ok`
+  - `last_status=skipped`
+  - `idle_reason=out_of_schedule`
+- foreground smoke: RabbitMQ / kis-data-hub / Redis startup probe 성공.
+- config path: `/root/release/trex-tvr-v1/config/tvr-m4-krx.toml`
+- status path: `/root/release/logs/trex-tvr-v1-status.json`
+- config summary:
+  - `instance_key="tvr-m4-krx"`
+  - `instances=["genichin-longterm"]`
+  - `poll_interval=60`
+  - `session_start="08:00"`, `session_end="20:00"`
+  - `execution.timeout_sec=30`
+  - `execution.slippage_pct=0.5`
+
+#### Release Result
+
+- Deployment result: **SUCCESS**
+- Strategy activation result: **not cutover yet / idle 정상**
+- Rollback Required: no
+- Release Status Transition: `released`
+
+#### Remaining Operational Follow-up
+
+1. `portfolio-hub` 대상 portfolio를 `tvr_v1` strategy set에 연결.
+2. 각 대상에 `strategy_params.target_weight`, `rebalance_band_pct`, `min_trade_krw` 반영.
+3. 필요 시 TVR fan-in instance를 `trex-admin-daily-trading` 또는 다중 instance로 확장.
+4. 장중/세션 내 `trex-tvr-v1 status`와 log 기준 first active cycle 재검증.
 
 ## Follow-up / Feedback Capture
 
