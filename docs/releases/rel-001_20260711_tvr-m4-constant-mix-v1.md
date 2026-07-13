@@ -517,5 +517,9 @@ cd <trex-tvr-v1 배포 디렉토리>
 ## Follow-up / Feedback Capture
 
 - M5: TVR runtime architecture e2e/운영 재확인 카드로 운영 결과 환류
+- Release feedback / architecture debt: `portfolio-hub.strategy_sets(name, config TEXT)`는 M4 KRX-only의 단순 TVR 설정에는 동작하지만, 복잡한 전략 설정·포트폴리오별 override가 늘어나면 `strategy_sets` row 폭증, 의미 추적 어려움, 감사/승인/rollback 취약성이 커진다.
+  - 사장님 피드백: 이런 설계인 줄 알았다면 강하게 반대했을 사안. M5에 억지로 넣기에는 어렵고, 심각한 별도 설계 검토가 필요.
+  - 단기 운영 원칙: `strategy_sets.config` 직접 UPDATE 금지, portfolio 전략 변경은 API/CLI의 get-or-create 경로만 사용, TVR cutover 대상은 최소화, 사용한 config/포트폴리오 매핑은 운영 evidence로 남김.
+  - 후속 후보: M5 강제 편입이 아니라 post-M5 또는 별도 Discovery 후보로 `strategy preset / portfolio assignment / override / versioning / audit` 모델을 검토.
 - M5: TSL observability P1/P2 별도 Discovery
 - M5: ORB↔kdh fetch 신뢰성 재발 로그 BAT-022 관측성 기반 재판정
