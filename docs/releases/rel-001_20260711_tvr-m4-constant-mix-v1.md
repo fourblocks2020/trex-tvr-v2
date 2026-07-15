@@ -38,15 +38,21 @@ v1의 핵심은 신규 데이터 소스 없이 현재 보유/현금/현재가와
 | `trex-core` | PR #38 / REQ-117/118 | `OrderRequest.venue`, KIS broker `EXCG_ID_DVSN_CD`, current price market parameterization | merged, local confirm-doc commit ahead 1 |
 | `kis-data-hub` | PR #21 / REQ-069~071 | quotes market `J/NX/UN` provider/API/test | merged, local confirm-doc commit ahead 1 |
 
-### Excluded / M5 이월
+### Excluded / future follow-up candidates
 
 - ORB↔kis-data-hub fetch 신뢰성 root-cause fix — BAT-022 관측성 적용 후 재확인
 - TVR runtime architecture e2e/운영 재확인(dcy-002 후속) — M5
-- TSL observability P1 — watchdog 필드·cycle history·notifier 연동 — M5
-- TSL observability P2 — dashboard / metrics / web UI — M5
+- TSL observability P1 — watchdog 필드·cycle history·notifier 연동 — release 시점에는 M5 이월 후보였으나, **2026-07-15 사장님 결정으로 M5 제외**
+- TSL observability P2 — dashboard / metrics / web UI — release 시점에는 M5 이월 후보였으나, **2026-07-15 사장님 결정으로 M5 제외**
 - TVR v2 동적 목표비율(기술지표·재무상태 기반) — 별도 Discovery
 - NXT 연장세션 보호장치(OQ-3: spread guard, limit band, session-weighted band) — 초기 운영 관찰 후 change-req
 - kdh 분봉 세션 창(08:00~20:00) 확장 — TVR v1 즉시 필요 범위 아님
+
+### Post-release scope revision — 2026-07-15
+
+사장님 결정으로 `trex-tsl-v1 observability`의 P1(워치독 필드·cycle history·notifier 연동)과 P2(dashboard/metrics/web UI)는 **M5 범위에서 제외**한다. 두 항목은 GitHub Project #7에서 Backlog / Product Milestone `unassigned`로 보존하며, M5 release 또는 delivery의 선행조건·blocker로 취급하지 않는다.
+
+재진입은 별도 우선순위 결정 후 새 Discovery에서 운영 요구, 데이터 소스·소유 repo, notifier/metrics 의존성을 다시 확정하는 경우에만 허용한다.
 
 ## 현재 준비 상태
 
