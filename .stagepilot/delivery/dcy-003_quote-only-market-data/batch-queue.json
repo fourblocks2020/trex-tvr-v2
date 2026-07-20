@@ -10,9 +10,14 @@
       "included_reqs": [
         "REQ-003@2"
       ],
-      "status": "ready",
+      "status": "completed",
       "reason": "The approved quote-only correction and its AC-10/11 regression evidence form one narrow isolated delivery unit.",
-      "evidence_paths": []
+      "evidence_paths": [
+        "docs/batches/bat-003_20260720_quote-only-market-data/verification.md",
+        "docs/releases/rel-002_20260720_tvr_quote_only_market_data.md"
+      ],
+      "started_at": "2026-07-20T13:52:12+09:00",
+      "completed_at": "2026-07-20T14:27:00+09:00"
     }
   ]
 }
