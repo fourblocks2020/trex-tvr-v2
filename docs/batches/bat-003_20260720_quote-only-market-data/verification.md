@@ -1,6 +1,6 @@
 # BAT-003 Verification
 
-- Status: QC reviewed — lead confirmation pending
+- Status: confirmed
 - Batch: BAT-003
 - REQ: REQ-003@2
 - Review source: isolated worktree
@@ -31,3 +31,9 @@ Executed in the reviewed worktree with `PYTHONPATH` removed:
 ## Residual risk
 
 No product-code blocker found. The remaining non-product follow-up is to repair the harness final-result recording behavior before relying on supervised-worker completion alone.
+
+## Lead confirmation
+
+- Confirmed by: trex-dev-lead
+- Basis: independent `dev-qc` PASS-WITH-NOTES, direct isolated-worktree reruns, and clean diff check.
+- Decision: verification gate confirmed for release-candidate drafting. The supervision artifact gap is a non-product harness follow-up; this is not deployment, publication, or release approval.

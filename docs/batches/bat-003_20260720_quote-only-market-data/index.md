@@ -1,6 +1,6 @@
 # BAT-003: TVR quote-only market-data correction
 
-- Status: verified
+- Status: release-candidate
 - Profile: standard
 - Root Delivery: `dcy-003_quote-only-market-data`
 - Source Discovery: dcy-003
