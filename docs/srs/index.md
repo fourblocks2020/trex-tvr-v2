@@ -83,7 +83,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | REQ-001 | TVR v1 리밸런싱 평가 코어 로직 | Interface | Implemented | High | service-dev (tvr) | [req-001](Interface/req-001_tvr-rebalancing-core-logic.md) |
 | REQ-002 | TVR sell-intent 경로 신설 | Interface | Implemented | High | service-dev (tvr) | [req-002](Interface/req-002_tvr-sell-intent-transport.md) |
-| REQ-003 | TVR decision-cycle 리밸런싱형 확장 + slots strategy 필터 | Integration | Implemented | High | service-dev (tvr) | [req-003](Integration/req-003_tvr-decision-cycle-rebalancing.md) |
+| REQ-003 | TVR decision-cycle 리밸런싱형 확장 + slots strategy 필터 | Integration | Approved | High | service-dev (tvr) | [req-003](Integration/req-003_tvr-decision-cycle-rebalancing.md) |
 | REQ-004 | TVR status/health 관측성 day-1 | Non-Functional | Implemented | Medium | service-dev (tvr) | [req-004](Non-Functional/req-004_tvr-observability-day1.md) |
 | REQ-005 | 세션 캘린더 + 슬롯별 시장 적격성 게이트 | Integration | Implemented | High | service-dev (tvr) | [req-005](Integration/req-005_session-calendar-market-gate.md) |
 | REQ-006 | 케이던스 — 60s 바닥 + 무슬립 드레인 | Configuration | Implemented | High | service-dev (tvr) | [req-006](Configuration/req-006_cadence-60s-drain.md) |
@@ -91,5 +91,6 @@
 
 ## Recent Change Log Summary
 
+- 2026-07-20: REQ-003 CHG-20260720-02 — quote-only `count=0` 분봉 요청 제거를 REQ-003@2로 승인. 기존 구현 증거 무효화, BAT-003 재검증 필요.
 - 2026-07-06: REQ-005~007 최초 생성 (dcy-002 confirmed Discovery 기반, Status: Implemented)
 - 2026-07-04: REQ-001~004 최초 생성 (dcy-001 confirmed Discovery 기반, Status: Implemented)
