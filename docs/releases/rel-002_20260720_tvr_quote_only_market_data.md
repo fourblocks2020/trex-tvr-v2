@@ -5,7 +5,7 @@
 - Included batch: BAT-003
 - Scope authority: DCY-003 confirmed; REQ-003@2 approved
 - Candidate code/test payload: `9398b2d`
-- Publication state: merged on local `main`; remote push is pending. No deployment or production action has occurred.
+- Publication state: merged and pushed to `origin/main` at `32c5b1e48b50d1e8556b2d3b99b77760aacbbf5a`. No deployment or production action has occurred.
 
 ## Change summary
 
@@ -29,4 +29,4 @@ Correct `KisDataHubClient.fetch_market_data()` so `candle_count <= 0` performs q
 
 ## Release controls
 
-This is a **draft** only. It does not approve publication, merge, deployment, or production validation. Those actions remain blocked pending explicit user release approval and the normal merge/publication process.
+This is a **draft** only. Publication is complete, but deployment and production validation require the operational deployment request and the operations team's execution evidence. See [OPS-20260720-REL-002](./ops-20260720-rel-002-deployment-request.md).
