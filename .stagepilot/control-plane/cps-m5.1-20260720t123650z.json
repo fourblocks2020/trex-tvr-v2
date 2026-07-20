@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "snapshot_id": "CPS-M5.1-20260720T123650Z",
+  "assessment_at": "2026-07-20T12:36:50Z",
+  "expires_at": "2026-07-20T12:51:50Z",
+  "decision": {
+    "kind": "milestone_completion",
+    "context_id": "M5.1",
+    "requested_outcome": "completed"
+  },
+  "result": "PASS",
+  "sources": [
+    {
+      "id": "repository",
+      "category": "repository_baseline",
+      "status": "available",
+      "observed_at": "2026-07-20T12:36:50Z",
+      "provenance": {
+        "revision": "d4e511f18b40f4db176b4f4ff99c4876e6953572",
+        "recorded_at": "2026-07-20T12:36:50Z"
+      },
+      "evidence_ref": "rel-002-feedback-handoff"
+    },
+    {
+      "id": "lifecycle",
+      "category": "lifecycle_documents",
+      "status": "available",
+      "observed_at": "2026-07-20T12:36:50Z",
+      "provenance": {
+        "revision": "d4e511f18b40f4db176b4f4ff99c4876e6953572",
+        "recorded_at": "2026-07-20T12:36:50Z"
+      },
+      "evidence_ref": "REL-002-BAT-003-verified"
+    },
+    {
+      "id": "tracker",
+      "category": "external_work_tracker",
+      "status": "available",
+      "observed_at": "2026-07-20T12:36:50Z",
+      "provenance": {
+        "revision": "issue-3-closed-project7-done-m5.1",
+        "recorded_at": "2026-07-20T12:36:50Z"
+      },
+      "evidence_ref": "M5.1-issue-3"
+    },
+    {
+      "id": "operations",
+      "category": "operational_evidence",
+      "status": "available",
+      "observed_at": "2026-07-20T12:36:50Z",
+      "provenance": {
+        "revision": "ops-20260720-145228KST",
+        "recorded_at": "2026-07-20T12:36:50Z"
+      },
+      "evidence_ref": "REL-002-feedback-handoff"
+    }
+  ],
+  "blockers": []
+}

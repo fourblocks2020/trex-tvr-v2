@@ -47,8 +47,8 @@ Correct `KisDataHubClient.fetch_market_data()` so `candle_count <= 0` performs q
 
 ### Lifecycle 기록 경계
 
-운영팀 증적은 이 문서에 사실로 보존한다. 그러나 현재 환경에서 필수 `scripts/record_lifecycle_claim.py`를 확인하지 못했으므로, 이 문서만으로 positive lifecycle claim(`deployed` 또는 `release_completion`)을 기록하거나 승격하지 않는다.
+운영팀 증적은 이 문서에 사실로 보존한다. `scripts/record_lifecycle_claim.py`로 현재 control-plane snapshot `CPS-M5.1-20260720T123650Z`을 검증했고, M5.1 `milestone_completion` claim이 accepted 되었다. claim artifact는 `.stagepilot/claims/m5.1-milestone-completion.json`이다.
 
 ## Release controls
 
-Operations evidence is captured in the Feedback Handoff above. The positive lifecycle claim remains unverified because the required lifecycle-claim recorder was unavailable in this environment.
+Operations evidence is captured in the Feedback Handoff above. The M5.1 milestone-completion lifecycle claim is accepted; a separate REL-002 release-completion claim was not requested or recorded.
