@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "discovery_id": "DCY-003",
+  "root_delivery_id": "dcy-003_quote-only-market-data",
+  "current_index": 0,
+  "items": [
+    {
+      "queue_index": 0,
+      "batch_id": "BAT-003",
+      "included_reqs": [
+        "REQ-003@2"
+      ],
+      "status": "ready",
+      "reason": "The approved quote-only correction and its AC-10/11 regression evidence form one narrow isolated delivery unit.",
+      "evidence_paths": []
+    }
+  ]
+}

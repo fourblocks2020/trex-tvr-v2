@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "root_type": "discovery",
+  "delivery_id": "dcy-003_quote-only-market-data",
+  "discovery_id": "DCY-003",
+  "owner_target": "delivery-runner",
+  "delivery_profile": "standard",
+  "doctor_adoption_mode": "not-adopted",
+  "status": "ready",
+  "state": "ready",
+  "current_stage": "kickoff",
+  "repo": "/home/genichin/workspace/trex-lead/repos/trex-tvr-v1",
+  "approved_refs": [
+    "REQ-003@2"
+  ],
+  "scope_snapshot": "scope-REQ-003-r2.json",
+  "scope_revision": 2,
+  "scope_snapshot_sha256": "cd69901adf9182dfcb37638ec47760ce0205c08aad6186e5566559648bc82b41",
+  "implemented_reqs": [],
+  "remaining_approved_reqs": [
+    "REQ-003@2"
+  ],
+  "batch_queue_path": ".stagepilot/delivery/dcy-003_quote-only-market-data/batch-queue.json",
+  "current_batch": null,
+  "completed_batches": [],
+  "release_handback_required": true,
+  "done_definition": "REQ-003@2 is implemented, independently QC-verified, recorded through batch verification and requirement synchronization, and handed back to the lead with release-candidate evidence. Drafting or approving a release is outside runner authority.",
+  "notification_targets": [],
+  "created_at": "2026-07-20T13:50:54+09:00",
+  "updated_at": "2026-07-20T13:50:54+09:00"
+}

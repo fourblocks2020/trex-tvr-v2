@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "requirement_id": "REQ-003",
+  "revision": 2,
+  "status": "approved",
+  "approval_ref": "APR-REQ-003-R2-20260720",
+  "risk_assessment": "The correction is local to the TVR HTTP client quote-only path; it must preserve positive-count candle retrieval and is validated with isolated mock transport and daemon regression tests.",
+  "evidence_refs": [
+    "dcy-003 confirmed 2026-07-20",
+    "CHG-20260720-01",
+    "CHG-20260720-02"
+  ],
+  "change_request_ref": "CHG-20260720-01",
+  "supersedes": "REQ-003@1",
+  "source_refs": [
+    "DCY-003 confirmed",
+    "REQ-003 change log",
+    "CHG-20260720-01"
+  ],
+  "scope_summary": "Correct the quote-only market-data path so candle_count zero or lower fetches only a current quote, returns an empty candle list, and permits the existing TVR decision cycle to submit a buy intent for a BuySignal.",
+  "acceptance_criteria": [
+    "For fetch_market_data with candle_count zero, the minute-candle endpoint is not called and the result has the quote price as current_price and an empty candles list.",
+    "For the TVR quote-only decision path, an eligible slot and BuySignal cause exactly one buy intent without a minute-candle request.",
+    "For candle_count greater than zero, existing candle retrieval and same-day filtering remain covered by regression tests."
+  ],
+  "non_goals": [
+    "Do not change TVR strategy formulas or signal semantics.",
+    "Do not change AMQP wire contracts, trex-core behavior, or kis-data-hub HTTP API contracts.",
+    "Do not perform deployment, real-order execution, or production connectivity testing."
+  ],
+  "locked_decisions": [
+    {
+      "id": "DEC-DCY-003-QUOTE-ONLY",
+      "rule": "A non-positive candle_count is a quote-only request and must not call the minute-candle endpoint."
+    },
+    {
+      "id": "DEC-DCY-003-POSITIVE-COUNT",
+      "rule": "A positive candle_count retains the existing minute-candle retrieval and same-day filtering behavior."
+    },
+    {
+      "id": "DEC-DCY-003-ISOLATED-VALIDATION",
+      "rule": "Validation uses isolated mock transport and daemon fixtures; production and real-order actions are excluded."
+    }
+  ],
+  "change_policy": "lead_approved_revision"
+}
