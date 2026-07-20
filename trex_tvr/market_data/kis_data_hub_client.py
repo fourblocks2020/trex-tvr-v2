@@ -232,11 +232,15 @@ class KisDataHubClient:
         """
         quote = self.get_quote(code)
         date_key = now_kst.date().isoformat()
-        raw = self.get_candles(code, candle_count)
-        # Keep only today's candles — the API returns the N most recent bars sorted
-        # oldest-first, which may include prior-day bars. Filtering here makes
-        # candles[0] the first bar of today.
-        candles = [c for c in raw if str(c.get("datetime", ""))[:10] == date_key]
+        if candle_count > 0:
+            raw = self.get_candles(code, candle_count)
+            # Keep only today's candles — the API returns the N most recent bars sorted
+            # oldest-first, which may include prior-day bars. Filtering here makes
+            # candles[0] the first bar of today.
+            candles = [c for c in raw if str(c.get("datetime", ""))[:10] == date_key]
+        else:
+            # TVR-like consumers pass candle_count=0/negative to request quote-only.
+            candles = []
         return {
             "current_price": quote["price"],
             "candles": candles,

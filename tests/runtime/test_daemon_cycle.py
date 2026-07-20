@@ -10,7 +10,9 @@ BAT-002: Extended with session gate + NXT markets gate tests (REQ-005 AC-13, AC-
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
+
+import httpx
 
 from tests.conftest import (
     KST,
@@ -18,9 +20,10 @@ from tests.conftest import (
     StubIntentPort,
     StubMarketData,
     StubSlotPort,
-    inactive_slot,
     holding_slot,
+    inactive_slot,
 )
+from trex_tvr.market_data.kis_data_hub_client import KisDataHubClient
 from trex_tvr.runtime.config import (
     Config,
     ExecutionConfig,
@@ -62,6 +65,22 @@ def _daemon(slot, intent, market_data, now):
         market_data_client=market_data,
         clock=lambda: now,
     )
+
+
+def _build_recording_kis_transport(calls: list[tuple[str, str, dict]], *, candles: list[dict] | None = None) -> httpx.MockTransport:
+    """Return a mock transport that records endpoint calls and returns stable fixtures."""
+
+    bars = candles if candles is not None else []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path, dict(request.url.params)))
+        if request.url.path == "/v1/quotes/latest" and request.method == "POST":
+            return httpx.Response(200, json={"price": "2000"})
+        if request.url.path == "/v1/candles/minute" and request.method == "GET":
+            return httpx.Response(200, json=bars)
+        return httpx.Response(404, json={"message": "unexpected path"})
+
+    return httpx.MockTransport(_handler)
 
 
 def test_full_cycle_emits_buy_intent_for_inactive_slot():
@@ -384,3 +403,33 @@ def test_ac15_nxt_session_absent_markets_suppresses_intent():
     assert result["intents"] == []
     diag_reasons = [d["reason"] for d in result.get("diagnostics", [])]
     assert "market_not_eligible" in diag_reasons
+
+
+def test_ac16_quote_only_market_data_path_does_not_call_candles_endpoint():
+    """REQ-003 AC-6: candle_count<=0이면 quotes만 가져오고 candles 엔드포인트는 호출하지 않는다."""
+    now = datetime(2026, 6, 8, 10, 0, tzinfo=KST)
+    calls: list[tuple[str, str, dict]] = []
+    transport = _build_recording_kis_transport(calls)
+
+    slot_row = inactive_slot(
+        qty=0,
+        cash_balance=1_000_000,
+        strategy_params={"target_weight": 0.70, "rebalance_band_pct": 5.0, "min_trade_krw": 10000},
+    )
+    slot = StubSlotPort({"slots": [slot_row], "degraded": False})
+    intent = StubIntentPort({"status": "admitted", "slot_id": "slot-1"})
+
+    with httpx.Client(transport=transport, base_url="https://kdh.test") as http_client:
+        daemon = _daemon(
+            slot,
+            intent,
+            KisDataHubClient(base_url="https://kdh.test", client=http_client),
+            now,
+        )
+        result = daemon.run_decision_cycle()
+
+    assert result["status"] == "ok"
+    assert len(result["intents"]) == 1
+    payload = result["intents"][0]["payload"]
+    assert payload["intent_type"] == "buy"
+    assert ("GET", "/v1/candles/minute", {"code": "005930", "count": "0"}) not in calls
