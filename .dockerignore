@@ -1,0 +1,25 @@
+**
+!pyproject.toml
+!uv.lock
+!trex_tvr/
+!trex_tvr/**
+
+# Explicit defense-in-depth exclusions; the allowlist above is authoritative.
+.git
+.github
+.proofline
+.venv
+.env
+.env.*
+**/.env
+config
+artifacts
+backtests
+data
+docs
+scripts
+tests
+temp
+**/__pycache__
+*.pyc
+*.egg-info

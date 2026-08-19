@@ -1,0 +1,139 @@
+name: Publish verified container image
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Reject every event except a strict version tag push
+        env:
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import os, re
+          assert os.environ["RELEASE_EVENT"] == "push"
+          assert re.fullmatch(r"refs/tags/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", os.environ["RELEASE_REF"])
+          assert re.fullmatch(r"[0-9a-f]{40}", os.environ["RELEASE_SHA"])
+          PY
+
+      - name: Check out exact tagged source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Validate checked-out source identity
+        run: python scripts/image_release.py validate-checkout --actual "$(git rev-parse HEAD)" --expected "${GITHUB_SHA}"
+
+      - name: Revalidate event with repository helper
+        run: python scripts/image_release.py validate-event --event "${GITHUB_EVENT_NAME}" --ref "${GITHUB_REF}" --commit "${GITHUB_SHA}"
+
+      - name: Validate tag, package, runtime, and OCI version input
+        run: python scripts/image_release.py validate-versions --ref "${GITHUB_REF}" --pyproject pyproject.toml --runtime-init trex_tvr/__init__.py
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned uv
+        run: python -m pip install "uv==0.11.14"
+
+      - name: Synchronize the locked verification environment
+        run: uv sync --extra dev --locked
+
+      - name: Run full repository regression
+        run: uv run pytest -q
+
+      - name: Lint only new release code and release contracts
+        run: uv run ruff check scripts/image_release.py tests/release
+
+      - name: Create excluded synthetic canary
+        run: printf '%s\n' 'TREX_TVR_SECRET_CANARY_DO_NOT_SHIP' > .env.ci-canary
+
+      - name: Build exact source image once
+        run: |
+          docker build --provenance=false \
+            --platform linux/amd64 \
+            --build-arg "SOURCE_COMMIT=${GITHUB_SHA}" \
+            --build-arg "RELEASE_VERSION=${GITHUB_REF_NAME#v}" \
+            --tag "tvr-ci:${GITHUB_SHA}" .
+
+      - name: Smoke package, CLIs, and isolated startup
+        run: python scripts/image_release.py smoke --image "tvr-ci:${GITHUB_SHA}" --timeout 120
+
+      - name: Record tested image ID
+        run: python scripts/image_release.py record-image-id --image "tvr-ci:${GITHUB_SHA}" --output tvr-image.id
+
+      - name: Export tested image without rebuilding
+        run: docker save --output tvr-image.tar "tvr-ci:${GITHUB_SHA}"
+
+      - name: Scan image, archive, metadata, and helper output for canary
+        run: |
+          set +e
+          python scripts/image_release.py scan --image "tvr-ci:${GITHUB_SHA}" --archive tvr-image.tar >canary-scan.stdout 2>canary-scan.stderr
+          scan_status=$?
+          set -e
+          python scripts/image_release.py assert-clean-output canary-scan.stdout canary-scan.stderr
+          exit "${scan_status}"
+
+      - name: Record archive checksum
+        run: python scripts/image_release.py checksum --archive tvr-image.tar --output tvr-image.tar.sha256
+
+      - name: Upload exact tested artifact handoff
+        uses: actions/upload-artifact@v4
+        with:
+          name: tested-image-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 7
+          path: |
+            tvr-image.tar
+            tvr-image.tar.sha256
+            tvr-image.id
+            scripts/image_release.py
+
+  publish:
+    needs: verify
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.publish.outputs.image }}
+      digest: ${{ steps.publish.outputs.digest }}
+      source_commit: ${{ steps.publish.outputs.source_commit }}
+    steps:
+      - name: Download exact tested artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tested-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tested-image
+
+      - name: Verify, load, tag, and publish without rebuilding
+        id: publish
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python tested-image/scripts/image_release.py publish \
+            --archive tested-image/tvr-image.tar \
+            --checksum tested-image/tvr-image.tar.sha256 \
+            --image-id tested-image/tvr-image.id \
+            --local-image "tvr-ci:${GITHUB_SHA}" \
+            --commit "${GITHUB_SHA}" \
+            --event "${GITHUB_EVENT_NAME}" \
+            --ref "${GITHUB_REF}"
