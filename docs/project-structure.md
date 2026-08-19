@@ -76,13 +76,13 @@ trex-tvr-v1/
 - `trex_tvr/transport/`
   - `connection.py`: pika AMQP 연결 관리 (backoff reconnect)
   - `slot_client.py`: snapshot RPC (universe + 가용 슬롯 조회)
-  - `intent_client.py`: buy intent RPC 제출
-  - `events_consumer.py`: trex.events 구독 (체결/슬롯 이벤트)
+  - `intent_client.py`: buy/sell intent RPC 제출
+  - `events_consumer.py`: legacy compatibility module; runtime decision cycle에는 연결하지 않음
   - `base.py`: transport port ABC
 - `trex_tvr/runtime/`
   - `daemon.py`: 결정-사이클 엔진 (schedule gate → capacity pre-flight → fan-out eval → intent)
   - `config.py`: per-instance TOML 파서
-  - `intent_builder.py`: BuySignal → wire DTO 변환
+  - `intent_builder.py`: BuySignal/SellSignal → venue 없는 wire DTO 변환
   - `cli.py`: `trex-tvr` 커맨드 진입점
 - `trex_tvr/backtest/`
   - 전략-무관 백테스트 (로컬 분봉 덤프 시간 리플레이, exit 시뮬레이터 포함)

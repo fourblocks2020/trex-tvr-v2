@@ -24,7 +24,7 @@
 
 ## Interface Summary
 
-- trex-core RabbitMQ wire 계약 :: snapshot/intent/events transport (consumed)
+- trex-core RabbitMQ wire 계약 :: slot snapshot/intent RPC transport (consumed)
 - kis-data-hub HTTP client :: 현재가/분봉 조달 (consumed)
 - trex-tvr-v1 CLI/config :: 운영자 기동 인터페이스 (own)
 
@@ -32,19 +32,18 @@
 
 - Type: event
 - Consumers / Producers: trex-tvr-v1 데몬(클라이언트) ↔ trex-core 데몬(서버), RabbitMQ broker가 transport
-- Purpose: snapshot RPC로 universe + 가용 슬롯 조회, intent RPC로 buy admission 제출, events 구독으로 체결/슬롯 이벤트 수신.
+- Purpose: slot snapshot RPC로 현재 core 상태를 읽고 buy/sell intent RPC를 제출한다. broker/fill event는 전략 입력으로 구독하지 않는다.
 - Stability: experimental
 
 ### Inputs
 
-- `trex.snapshot.req` :: `{view: all|buyable|held, strategy_key, trading_date}` — universe + 가용 슬롯 조회 요청
-- `trex.intent.req` buy :: `{intent_type: buy, intent_id, trading_date, symbol, qty?, allocated_capital?, entry_price?, strategy_id, stop_loss_price?, take_profit_price?}` — buy admission 제출
+- `trex.slots.req` :: `{filter: inactive,holding, strategy: tvr_v1}` — 현재 slot snapshot 조회
+- `trex.intent.req` buy/sell :: `{intent_type, intent_id, slot_id, qty, ...}` — admission 제출. TVR은 `venue`를 생략하며 core가 SOR로 정규화한다.
 
 ### Outputs
 
-- snapshot 응답 :: `{assets[], view, available_slots, degraded, reason, message}` (item에 price 없음)
+- slot snapshot 응답 :: `{slots[], available_slots, degraded, reason, message}` (item에 price 없음)
 - intent 응답 :: `{intent_id, status: admitted|rejected, slot_id?, reason?}`
-- `trex.events` :: `{event_type: slot_filled_buy|slot_filled_sell|..., slot_id, strategy_id?, symbol?, status, qty?, avg_price?}`
 
 ### Error Contract
 
@@ -56,6 +55,7 @@
 
 - wire 계약 소유자는 trex-core. trex-tvr-v1은 JSON payload 호환만 공유, `trex_core` 코드 무import.
 - intent `correlation_id`(=`intent_id`)가 멱등키 — core `intent_log`가 dedup.
+- TVR은 KIS failure, broker rejection detail, attempt identity, retryability, timeout 또는 fill/cancel raw event를 소비·저장하지 않는다. 다음 slot snapshot만 후속 판단에 사용한다.
 
 ## Interface: `kis-data-hub HTTP client`
 

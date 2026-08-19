@@ -7,7 +7,7 @@ BAT-002 / REQ-005:
     MAIN          09:00:30 <= t < 15:20 — KRX+NXT 접속매매
     CLOSE_AUCTION 15:20 <= t < 15:30  — KRX 종가단일가 갭 (체결 불가)
     AFTER_SINGLE  15:30 <= t < 15:40  — NXT 애프터 단일가 (NXT 전용)
-    AFTER_MARKET  15:40 <= t <= 20:00 — NXT 접속매매 (NXT 전용)
+    AFTER_MARKET  15:40 <= t < 20:00 — NXT 접속매매 (NXT 전용)
     OUT_OF_SESSION                    — 위 구간 밖 (체결 불가)
 
   is_tradeable(window): PRE_AUCTION / CLOSE_AUCTION / OUT_OF_SESSION → False, 나머지 → True.
@@ -55,7 +55,7 @@ def get_session(dt: datetime) -> SessionWindow:
 
     dt가 naive인 경우 KST로 처리한다.
     경계는 초 단위 정밀도를 포함해 비교한다(microsecond 포함).
-    20:00:00은 AFTER_MARKET 포함, 20:00:01은 OUT_OF_SESSION.
+    20:00:00부터 OUT_OF_SESSION이다.
     """
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=_KST)
@@ -77,7 +77,7 @@ def get_session(dt: datetime) -> SessionWindow:
         return SessionWindow.CLOSE_AUCTION
     if t < _T_AFTER_MARKET_START:
         return SessionWindow.AFTER_SINGLE
-    if t <= _T_AFTER_MARKET_END:
+    if t < _T_AFTER_MARKET_END:
         return SessionWindow.AFTER_MARKET
     return SessionWindow.OUT_OF_SESSION
 

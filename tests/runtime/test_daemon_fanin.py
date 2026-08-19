@@ -14,8 +14,7 @@ AC 매핑:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import datetime
 
 import pytest
 
@@ -349,10 +348,11 @@ def test_ac8_build_sell_intent_includes_instance_key():
         slot_id="slot_002",
         strategy_id="tvr_v1",
         instance_key="inst_b",
+        decision_at="cycle-1",
     )
     assert payload["intent_id"].startswith("sell:")
     assert "inst_b" in payload["intent_id"]
-    assert payload["intent_id"] == "sell:tvr_v1:inst_b:2026-07-06:slot_002"
+    assert payload["intent_id"] == "sell:tvr_v1:inst_b:2026-07-06:slot_002:cycle-1"
 
 
 # ---------------------------------------------------------------------------
@@ -431,8 +431,10 @@ def test_make_intent_id_with_instance_key():
 
 def test_make_sell_intent_id_with_instance_key():
     """make_sell_intent_id starts with 'sell:' and includes instance_key."""
-    iid = make_sell_intent_id("tvr_v1", "2026-07-06", "slot-1", instance_key="inst_b")
-    assert iid == "sell:tvr_v1:inst_b:2026-07-06:slot-1"
+    iid = make_sell_intent_id(
+        "tvr_v1", "2026-07-06", "slot-1", instance_key="inst_b", decision_at="cycle-1"
+    )
+    assert iid == "sell:tvr_v1:inst_b:2026-07-06:slot-1:cycle-1"
     assert iid.startswith("sell:")
 
 
@@ -444,5 +446,7 @@ def test_make_intent_id_default_instance_key():
 
 def test_make_sell_intent_id_default_instance_key():
     """make_sell_intent_id with default instance_key="default"."""
-    iid = make_sell_intent_id("tvr_v1", "2026-07-06", "slot-1")
-    assert iid == "sell:tvr_v1:default:2026-07-06:slot-1"
+    iid = make_sell_intent_id(
+        "tvr_v1", "2026-07-06", "slot-1", decision_at="cycle-1"
+    )
+    assert iid == "sell:tvr_v1:default:2026-07-06:slot-1:cycle-1"

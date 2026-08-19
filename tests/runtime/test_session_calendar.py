@@ -10,8 +10,8 @@ AC 매핑:
   AC-7: 15:29:59 → CLOSE_AUCTION, tradeable=False
   AC-8: 15:30:00 → AFTER_SINGLE, tradeable=True, nxt_only=True
   AC-9: 15:40:00 → AFTER_MARKET, tradeable=True, nxt_only=True
-  AC-10: 20:00:00 → AFTER_MARKET, tradeable=True (경계 포함)
-  AC-11: 20:00:01 → OUT_OF_SESSION, tradeable=False
+  AC-10: 19:59:59 → AFTER_MARKET, tradeable=True
+  AC-11: 20:00:00 → OUT_OF_SESSION, tradeable=False
   AC-12: 휴장일 → is_tradeable=False (구간 무관)
   AC-13: is_tradeable=False → session_hold (daemon 테스트 — test_daemon_cycle.py 확장)
   AC-14: NXT 구간 + markets=["NXT","KRX"] → 정상 평가 + intent 발신 허용 (daemon 테스트)
@@ -154,22 +154,22 @@ def test_ac9_after_market_15_40_00():
 
 
 # ---------------------------------------------------------------------------
-# AC-10: 20:00:00 → AFTER_MARKET (경계 포함)
+# AC-10: 19:59:59 → AFTER_MARKET
 # ---------------------------------------------------------------------------
-def test_ac10_after_market_20_00_00():
-    """AC-10: 20:00:00(KST 평일) → AFTER_MARKET, tradeable=True (경계 <=20:00 포함)."""
-    dt = _kst(20, 0, 0)
+def test_ac10_after_market_19_59_59():
+    """AC-10: 19:59:59(KST 평일) → AFTER_MARKET, tradeable=True."""
+    dt = _kst(19, 59, 59)
     w = get_session(dt)
     assert w == SessionWindow.AFTER_MARKET
     assert is_tradeable(w) is True
 
 
 # ---------------------------------------------------------------------------
-# AC-11: 20:00:01 → OUT_OF_SESSION
+# AC-11: 20:00:00 → OUT_OF_SESSION
 # ---------------------------------------------------------------------------
-def test_ac11_out_of_session_20_00_01():
-    """AC-11: 20:00:01(KST 평일) → OUT_OF_SESSION, tradeable=False."""
-    dt = _kst(20, 0, 1)
+def test_ac11_out_of_session_20_00_00():
+    """AC-11: 20:00:00(KST 평일) → OUT_OF_SESSION, tradeable=False."""
+    dt = _kst(20, 0, 0)
     w = get_session(dt)
     assert w == SessionWindow.OUT_OF_SESSION
     assert is_tradeable(w) is False

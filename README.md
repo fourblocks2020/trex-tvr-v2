@@ -65,8 +65,12 @@ trex-tvr-backtest --config instance.example --date-range 20260501:20260612 \
 - **slot_id is the canonical key** (buy and sell intents).
 - **TVR exit**: TVR is a pure rebalancing strategy — it does NOT declare stop_loss/take_profit
   on buy intents. The `[exit]` config section is optional and omitted for TVR.
-- **Idempotency**: buy `intent_id = {strategy_id}:{trading_date}:{slot_id}`,
-  sell `intent_id = sell:{strategy_id}:{trading_date}:{slot_id}`.
+- **Idempotency**: buy intent는 slot/day 단위 키를 사용한다. sell intent는
+  `sell:{strategy_id}:{instance}:{trading_date}:{slot_id}:{decision_at}`으로 한 snapshot
+  decision 안에서는 멱등이고, 이후 holding snapshot의 독립 판단은 새 키를 사용한다.
+- **Snapshot-only execution boundary**: TVR은 core slot snapshot만 전략 판단 입력으로
+  사용한다. broker/fill event, retryability 또는 attempt identity를 구독하지 않는다.
+- **Venue**: TVR buy/sell intent는 venue를 보내지 않으며 core가 SOR로 정규화한다.
 - **strategy_params** (target_weight etc.) come from portfolio-hub `strategy_sets` → trex-core
   slot row → daemon eval_asset. TVR config TOML carries runtime settings only.
 - **trex-core wire dependencies** (strategy filter + row strategy_params) are additive changes
@@ -81,7 +85,6 @@ trex_tvr/
   market_data/  kis_data_hub_client.py · holiday_cache.py
   transport/    base.py · connection.py · slot_client.py
                 intent_client.py (submit_buy + submit_sell)
-                events_consumer.py
   runtime/      daemon.py (rebalancing engine) · config.py · intent_builder.py
                 status.py (StatusSnapshot · write_snapshot · read_snapshot)
                 cli.py (run | status subcommands)

@@ -26,18 +26,18 @@
 
 ## Model Summary
 
-- BuyIntent(wire DTO) :: TVR 평가 결과를 trex-core로 보내는 매수 admission 요청
+- BuyIntent/SellIntent(wire DTO) :: TVR 평가 결과를 trex-core로 보내는 admission 요청
 - HolidayCache(Redis) :: 거래일/공휴일 판정 캐시
 
-## Entity: `BuyIntent (wire DTO)`
+## Entity: `BuyIntent / SellIntent (wire DTO)`
 
-- Purpose: TVR evaluate()에서 BuySignal이 발생할 때 trex-core로 보내는 매수 admission 요청.
+- Purpose: TVR evaluate()의 BuySignal/SellSignal을 trex-core admission 요청으로 변환한다.
 - Source of Truth: RabbitMQ 메시지 (전이 권위는 trex-core `daily_slot`/`intent_log`)
-- Lifecycle: BuySignal 발생 -> intent 발행 -> core admitted|rejected -> events로 체결 수신
+- Lifecycle: BuySignal 발생 -> intent 발행 -> core admitted|rejected -> 다음 slot snapshot에서 상태 수렴 관측
 
 ### Key Fields
 
-- `intent_id` :: str :: `{strategy_id}:{trading_date}:{slot_id}` — correlation_id이자 멱등키
+- `intent_id` :: str :: buy는 slot/day 키, sell은 `sell:{strategy}:{instance}:{date}:{slot}:{decision_at}` — correlation_id이자 멱등키
 - `symbol` :: str :: 대상 종목 코드
 - `qty` :: int? :: 주문 수량 (allocated_capital 대신 지정 가능)
 - `allocated_capital` :: int? :: 배정 자본 (KRW)
@@ -53,8 +53,9 @@
 
 ### State Rules
 
-- 동일 `intent_id` 재전송은 core가 dedup — 같은 cycle 재시도 시 `intent_id` 재사용.
-- 매도 intent 경로는 현재 미구현 (리밸런싱 sell-intent 설계 후 추가 예정).
+- buy intent는 slot/day 단위로 dedup한다.
+- sell intent는 한 snapshot decision의 `decision_at`을 키에 포함한다. 동일 decision의 transport 중복은 dedup하고 이후 holding snapshot의 새 전략 판단은 독립 키를 사용한다.
+- buy/sell intent는 venue를 보내지 않으며 core의 omitted venue→SOR 계약을 사용한다.
 
 ## Entity: `HolidayCache (Redis, 선택)`
 
@@ -77,7 +78,8 @@
 
 ## Shared Consistency Rules
 
-- 슬롯 상태/원장 기록의 단일 source of truth는 trex-core. trex-tvr-v1은 snapshot/events로 읽기만.
+- 슬롯 상태/원장 기록의 단일 source of truth는 trex-core. trex-tvr-v1은 slot snapshot만 전략 판단 입력으로 읽는다.
+- TVR은 broker outcome, retryability, attempt identity 또는 fill/cancel raw event를 durable state로 저장하지 않는다.
 - intent 멱등키(`intent_id`)로 중복 매수 admission을 방지 (권위 dedup은 core `intent_log`).
 
 ## Persistence / Integration Notes
@@ -87,7 +89,6 @@
 ## Current Gaps / Planned Changes
 
 - TVR 파라미터(target_weight, rebalance_threshold) 엔티티/저장 방식 미확정 — 첫 Discovery에서 정의.
-- 리밸런싱 매도 intent DTO 미정의 — sell-intent 경로 설계 후 이 문서에 추가.
 
 ## Update Triggers
 

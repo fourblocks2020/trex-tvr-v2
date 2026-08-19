@@ -23,6 +23,11 @@ BAT-002 changes (session calendar + cadence + fan-in):
       intent_id includes instance_key: {strategy}:{instance}:{date}:{slot}.
       Partial failure: partial_degraded + continue. Total failure: degraded_hold.
 
+Issue #5 snapshot-only boundary:
+  - Broker execution events are not consumed by the decision cycle.
+  - A sell decision id is scoped to the current snapshot cycle, so a later holding
+    snapshot can create an independent intent without broker retry metadata.
+
 The decision cycle uses a 2-phase fan-out:
   Phase 1 (fan-out)   : ThreadPoolExecutor workers fetch current price + evaluate strategy
                         per eligible slot row. Transport is never touched in workers
@@ -47,7 +52,7 @@ from typing import Any, Callable, Optional
 from trex_tvr.market_data.kis_data_hub_client import KisDataHubClient, KisDataHubClientError
 from trex_tvr.runtime.config import Config, load_config
 from trex_tvr.runtime.intent_builder import build_buy_intent, build_sell_intent
-from trex_tvr.runtime.session_calendar import SessionWindow, get_session_info
+from trex_tvr.runtime.session_calendar import get_session_info
 from trex_tvr.runtime.status import DepsStatus, StatusSnapshot, write_snapshot
 from trex_tvr.strategies import registry
 from trex_tvr.strategies.base import BuySignal, Diagnostic, SellSignal
@@ -149,7 +154,7 @@ class Daemon:
         # Legacy single-port (backward compat — tests, build_daemon pre-fanin).
         slot_port: Optional[SlotPort] = None,
         intent_port: Optional[IntentPort] = None,
-        events_port: EventsPort,
+        events_port: Optional[EventsPort] = None,
         market_data_client: Any,
         clock: Callable[[], datetime] = _now_kst,
         reconnect_fn: Optional[Callable[[], None]] = None,
@@ -181,6 +186,8 @@ class Daemon:
         self._slot = next(iter(self._slot_ports.values()))
         self._intent = next(iter(self._intent_ports.values()))
 
+        # Compatibility injection seam only. Decisions consume slot snapshots;
+        # broker/fill events are not polled or used as retry input.
         self._events = events_port
         self._market_data = market_data_client
         self._clock = clock
@@ -520,6 +527,7 @@ class Daemon:
                     slot_id=slot_id,
                     strategy_id=strategy.strategy_id,
                     instance_key=source_instance,
+                    decision_at=now.isoformat(),
                 )
                 # REQ-007: route to source instance's intent port.
                 intent_port = self._intent_ports.get(source_instance, self._intent)
@@ -545,13 +553,11 @@ class Daemon:
                 cycle_elapsed_ms, budget_ms, len(eligible),
             )
 
-        observed = self._events.poll_events()
         result = {
             "status": "ok",
             "slots": len(slots),
             "intents": intents,
             "diagnostics": diagnostics,
-            "events_observed": len(observed),
             "cycle_elapsed_ms": cycle_elapsed_ms,
         }
         self._update_snapshot(cycle_status="ok")
@@ -627,7 +633,7 @@ def build_daemon(config: Config, status_path: Optional[str] = None) -> tuple["Da
     BAT-002 REQ-007: creates per-instance SlotPort/IntentPort maps from config.instances.
     """
     from trex_tvr.transport.connection import PikaConnection
-    from trex_tvr.transport.events_consumer import PikaEventsConsumer
+
     from trex_tvr.transport.intent_client import PikaIntentClient
     from trex_tvr.transport.slot_client import PikaSlotClient
 
@@ -677,7 +683,6 @@ def build_daemon(config: Config, status_path: Optional[str] = None) -> tuple["Da
         config,
         slot_ports=slot_ports,
         intent_ports=intent_ports,
-        events_port=PikaEventsConsumer(conn, config.strategy_id),
         market_data_client=kis,
         reconnect_fn=conn.reconnect,
         holiday_cache=HolidayCache(config.redis_url, kis),

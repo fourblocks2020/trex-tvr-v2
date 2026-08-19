@@ -22,12 +22,19 @@ def test_ac1_build_sell_intent_fields():
     """AC-REQ002-1: SellSignal → dict with correct fields, no stop_loss/take_profit."""
     signal = SellSignal(symbol="005930", slot_id="slot-abc", qty=4,
                         reason="rebalance_sell", strategy_id="tvr_v1")
-    payload = build_sell_intent(signal, trading_date="2026-07-04",
-                                slot_id="slot-abc", strategy_id="tvr_v1")
+    payload = build_sell_intent(
+        signal,
+        trading_date="2026-07-04",
+        slot_id="slot-abc",
+        strategy_id="tvr_v1",
+        decision_at="2026-07-04T10:00:00+09:00",
+    )
 
     assert payload["intent_type"] == "sell"
     # BAT-002 REQ-007: intent_id now includes instance_key (default="default").
-    assert payload["intent_id"] == "sell:tvr_v1:default:2026-07-04:slot-abc"
+    assert payload["intent_id"] == (
+        "sell:tvr_v1:default:2026-07-04:slot-abc:2026-07-04T10:00:00+09:00"
+    )
     assert payload["slot_id"] == "slot-abc"
     assert payload["qty"] == 4
     assert payload["reason"] == "rebalance_sell"
@@ -41,20 +48,26 @@ def test_ac1_build_sell_intent_fields():
 # ---------------------------------------------------------------------------
 # AC-REQ002-2: 멱등 — 동일 입력 2회 호출 → 동일 intent_id
 # ---------------------------------------------------------------------------
-def test_ac2_sell_intent_id_idempotent():
-    """AC-REQ002-2: 동일 (strategy_id, trading_date, slot_id) → 동일 intent_id."""
-    signal = SellSignal(symbol="005930", slot_id="slot-abc", qty=4,
-                        reason="rebalance_sell", strategy_id="tvr_v1")
-    id1 = build_sell_intent(signal, trading_date="2026-07-04",
-                            slot_id="slot-abc", strategy_id="tvr_v1")["intent_id"]
-    id2 = build_sell_intent(signal, trading_date="2026-07-04",
-                            slot_id="slot-abc", strategy_id="tvr_v1")["intent_id"]
-    # BAT-002 REQ-007: intent_id now includes instance_key (default="default").
-    assert id1 == id2 == "sell:tvr_v1:default:2026-07-04:slot-abc"
+def test_ac2_sell_intent_id_is_stable_within_decision_and_changes_next_cycle():
+    """One decision is idempotent; a later snapshot decision gets a fresh key."""
+    signal = SellSignal(
+        symbol="005930", slot_id="slot-abc", qty=4,
+        reason="rebalance_sell", strategy_id="tvr_v1",
+    )
+    common = dict(trading_date="2026-07-04", slot_id="slot-abc", strategy_id="tvr_v1")
+    id1 = build_sell_intent(
+        signal, **common, decision_at="2026-07-04T10:00:00+09:00"
+    )["intent_id"]
+    id2 = build_sell_intent(
+        signal, **common, decision_at="2026-07-04T10:00:00+09:00"
+    )["intent_id"]
+    id3 = build_sell_intent(
+        signal, **common, decision_at="2026-07-04T10:01:00+09:00"
+    )["intent_id"]
+    assert id1 == id2
+    assert id3 != id1
 
 
-# ---------------------------------------------------------------------------
-# AC-REQ002-3: IntentPort Protocol — submit_buy + submit_sell 모두 구현
 # ---------------------------------------------------------------------------
 def test_ac3_intent_port_protocol_stub():
     """AC-REQ002-3/4: stub IntentPort with submit_buy + submit_sell passes isinstance check."""
@@ -95,8 +108,13 @@ def test_ac8_build_sell_intent_invalid_qty():
     signal = SellSignal(symbol="005930", slot_id="slot-1", qty=0,
                         reason="rebalance_sell", strategy_id="tvr_v1")
     with pytest.raises(ValueError, match="qty"):
-        build_sell_intent(signal, trading_date="2026-07-04",
-                          slot_id="slot-1", strategy_id="tvr_v1")
+        build_sell_intent(
+            signal,
+            trading_date="2026-07-04",
+            slot_id="slot-1",
+            strategy_id="tvr_v1",
+            decision_at="cycle-1",
+        )
 
 
 def test_ac8_build_sell_intent_negative_qty():
@@ -104,8 +122,13 @@ def test_ac8_build_sell_intent_negative_qty():
     signal = SellSignal(symbol="005930", slot_id="slot-1", qty=-1,
                         reason="rebalance_sell", strategy_id="tvr_v1")
     with pytest.raises(ValueError, match="qty"):
-        build_sell_intent(signal, trading_date="2026-07-04",
-                          slot_id="slot-1", strategy_id="tvr_v1")
+        build_sell_intent(
+            signal,
+            trading_date="2026-07-04",
+            slot_id="slot-1",
+            strategy_id="tvr_v1",
+            decision_at="cycle-1",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +136,14 @@ def test_ac8_build_sell_intent_negative_qty():
 # ---------------------------------------------------------------------------
 def test_sell_intent_id_namespace_prefix():
     """sell: prefix separates from buy intent_id namespace."""
-    sell_id = make_sell_intent_id("tvr_v1", "2026-07-04", "slot-1")
+    sell_id = make_sell_intent_id(
+        "tvr_v1", "2026-07-04", "slot-1", decision_at="cycle-1"
+    )
     assert sell_id.startswith("sell:")
     # BAT-002 REQ-007: intent_id now includes instance_key (default="default").
-    assert sell_id == "sell:tvr_v1:default:2026-07-04:slot-1"
+    assert sell_id == "sell:tvr_v1:default:2026-07-04:slot-1:cycle-1"
+
+
+def test_sell_intent_id_requires_decision_cycle_token():
+    with pytest.raises(ValueError, match="decision_at"):
+        make_sell_intent_id("tvr_v1", "2026-07-04", "slot-1")

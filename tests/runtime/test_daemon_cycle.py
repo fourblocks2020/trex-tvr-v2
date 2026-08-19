@@ -137,6 +137,37 @@ def test_full_cycle_emits_sell_intent_for_holding_slot():
     assert payload["qty"] > 0
 
 
+def test_later_holding_snapshot_creates_independent_sell_without_broker_retry_input():
+    """Each snapshot cycle is independent; broker events/retryability are not consumed."""
+    params = {"target_weight": 0.30, "rebalance_band_pct": 5.0, "min_trade_krw": 10000}
+    slot = StubSlotPort({
+        "slots": [holding_slot(qty=20, cash_balance=100_000, strategy_params=params)],
+        "degraded": False,
+    })
+    intent = StubIntentPort({"status": "rejected", "reason": "broker_rejected"})
+
+    class EventsMustNotBePolled:
+        def poll_events(self, max_messages=100):
+            raise AssertionError("snapshot-only daemon must not consume broker events")
+
+    daemon = Daemon(
+        _config(),
+        slot_port=slot,
+        intent_port=intent,
+        events_port=EventsMustNotBePolled(),
+        market_data_client=StubMarketData(5000),
+    )
+
+    first = daemon.run_decision_cycle(datetime(2026, 6, 8, 10, 0, tzinfo=KST))
+    second = daemon.run_decision_cycle(datetime(2026, 6, 8, 10, 1, tzinfo=KST))
+
+    first_id = first["intents"][0]["payload"]["intent_id"]
+    second_id = second["intents"][0]["payload"]["intent_id"]
+    assert first_id != second_id
+    assert "venue" not in first["intents"][0]["payload"]
+    assert "venue" not in second["intents"][0]["payload"]
+
+
 def test_out_of_schedule_skips():
     """Cycle skips when current time is outside schedule window."""
     now = datetime(2026, 6, 8, 8, 0, tzinfo=KST)  # before 09:15

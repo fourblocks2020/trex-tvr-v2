@@ -1,19 +1,18 @@
-"""buy intent payload builder + exit threshold mapping.
+"""Buy/sell intent payload builders.
 
 exit is delegated to trex-core's safety-sell by declaring stop_loss / take_profit /
-forced_close thresholds on the buy intent. this daemon NEVER builds or publishes a
-sell intent — there is intentionally no sell path in this module.
+forced_close thresholds on the buy intent. TVR's own rebalancing sell path carries
+only slot, quantity, reason, strategy identity, and a decision-cycle idempotency key.
 
 REL-006 canonical target key is `slot_id` (slots[] round-trip). The
 buy payload carries `slot_id` and does NOT carry the deprecated `portfolio_id`,
 `symbol`, `trading_date`, or `allocated_capital` keys. trex-core resolves
 the symbol from the universe at admission.
 
-The idempotency key (`intent_id` == wire `correlation_id`) is deterministic per
-(strategy_id, trading_date, slot_id), so a retried cycle on the same trading day
-reuses the same key and trex-core's intent_log dedups the duplicate admission
-(the trading-date component keeps one admission per slot per day; the next
-trading day yields a fresh key).
+Buy idempotency remains deterministic per slot and trading day. Sell idempotency
+also includes the decision-cycle timestamp: duplicate transport submission of one
+decision keeps the same key, while a later core snapshot can produce an independent
+strategy decision without consuming broker retry metadata.
 
 Optional execution-policy fields (REL-006) are included only when
 configured: `timeout_sec` (auto-cancel + slot rollback after N seconds unfilled) and
@@ -46,13 +45,17 @@ def make_sell_intent_id(
     trading_date: str,
     slot_id: str,
     instance_key: str = "default",
+    decision_at: str = "",
 ) -> str:
-    """Deterministic sell idempotency key — `sell:` namespace separates from buy keys.
+    """Deterministic key for one sell decision cycle.
 
-    BAT-002 REQ-007: instance_key added to prevent cross-instance collision.
-    Format: `sell:{strategy_id}:{instance_key}:{trading_date}:{slot_id}`
+    ``decision_at`` comes from the current decision cycle, not from a broker result.
+    This preserves transport idempotency for one decision while allowing a later
+    holding snapshot to produce a new independent intent.
     """
-    return f"sell:{strategy_id}:{instance_key}:{trading_date}:{slot_id}"
+    if not decision_at:
+        raise ValueError("decision_at is required for a sell intent id")
+    return f"sell:{strategy_id}:{instance_key}:{trading_date}:{slot_id}:{decision_at}"
 
 
 def build_buy_intent(
@@ -110,6 +113,7 @@ def build_sell_intent(
     slot_id: str,
     strategy_id: str,
     instance_key: str = "default",
+    decision_at: str,
 ) -> dict:
     """Map a SellSignal into a sell intent payload for trex-core.
 
@@ -130,7 +134,9 @@ def build_sell_intent(
         raise ValueError(f"sell intent qty must be a positive int (got {signal.qty!r})")
     return {
         "intent_type": "sell",
-        "intent_id": make_sell_intent_id(strategy_id, trading_date, slot_id, instance_key),
+        "intent_id": make_sell_intent_id(
+            strategy_id, trading_date, slot_id, instance_key, decision_at
+        ),
         "slot_id": slot_id,
         "qty": int(signal.qty),
         "reason": signal.reason,
