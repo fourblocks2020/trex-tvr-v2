@@ -21,3 +21,4 @@ config/*
 !config/*.example.toml
 !config/.env.example
 !config/*.csv
+/.worktrees/
