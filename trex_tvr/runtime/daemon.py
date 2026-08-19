@@ -158,6 +158,7 @@ class Daemon:
         market_data_client: Any,
         clock: Callable[[], datetime] = _now_kst,
         reconnect_fn: Optional[Callable[[], None]] = None,
+        idle_wait_fn: Optional[Callable[[float], None]] = None,
         holiday_cache: Any = None,
         status_path: Optional[str] = None,
     ) -> None:
@@ -192,6 +193,7 @@ class Daemon:
         self._market_data = market_data_client
         self._clock = clock
         self._reconnect_fn = reconnect_fn
+        self._idle_wait_fn = idle_wait_fn
         self._holiday_cache = holiday_cache
         self._status_path = status_path
         # Same-day reentry guard for BUY only: slot_ids admitted today; reset on new trading day.
@@ -599,7 +601,13 @@ class Daemon:
                     elapsed = time.monotonic() - t_start
                     remaining = self.config.poll_interval - elapsed
                     if remaining > 0:
-                        time.sleep(remaining)
+                        if self._idle_wait_fn is not None:
+                            # BlockingConnection has no background I/O thread. Pumping
+                            # events while idle keeps negotiated heartbeats alive and
+                            # turns a reset into a typed transport failure.
+                            self._idle_wait_fn(remaining)
+                        else:
+                            time.sleep(remaining)
                     # else: no sleep — drain immediately into next cycle.
                 except (TransportUnavailableError, RpcTimeoutError) as exc:
                     delay = _compute_backoff(backoff_attempt)
@@ -642,7 +650,14 @@ def build_daemon(config: Config, status_path: Optional[str] = None) -> tuple["Da
     if failures:
         raise RuntimeError(f"strategy registry precheck failed: {failures}")
 
-    conn = PikaConnection(config.rabbitmq_url)
+    conn = PikaConnection(
+        config.rabbitmq_url,
+        heartbeat_seconds=config.rabbitmq_connection.heartbeat_seconds,
+        blocked_connection_timeout_seconds=(
+            config.rabbitmq_connection.blocked_connection_timeout_seconds
+        ),
+        socket_timeout_seconds=config.rabbitmq_connection.socket_timeout_seconds,
+    )
     kis = KisDataHubClient(
         config.kis_data_hub.base_url,
         config.kis_data_hub.api_key,
@@ -685,6 +700,7 @@ def build_daemon(config: Config, status_path: Optional[str] = None) -> tuple["Da
         intent_ports=intent_ports,
         market_data_client=kis,
         reconnect_fn=conn.reconnect,
+        idle_wait_fn=conn.wait_with_heartbeats,
         holiday_cache=HolidayCache(config.redis_url, kis),
         status_path=status_path,
     )

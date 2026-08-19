@@ -14,10 +14,8 @@ AC 매핑:
 """
 from __future__ import annotations
 
-import time
-from datetime import datetime, timezone, timedelta
-from unittest.mock import MagicMock, patch, call
-from typing import Optional
+from datetime import datetime
+from unittest.mock import patch
 
 from tests.conftest import (
     KST,
@@ -92,6 +90,29 @@ def test_ac1_floor_sleep_when_cycle_fast():
 
     assert len(slept) == 1
     assert abs(slept[0] - 50.0) < 0.01, f"Expected sleep(≈50), got sleep({slept[0]})"
+
+
+def test_issue6_idle_wait_pumps_rabbitmq_heartbeats_instead_of_sleeping():
+    now = datetime(2026, 6, 8, 10, 0, tzinfo=KST)
+    slot_row = inactive_slot(qty=0, cash_balance=1_000_000, strategy_params=_TVR_PARAMS)
+    idle_waits = []
+    daemon = Daemon(
+        _config(poll_interval=60),
+        slot_port=StubSlotPort({"slots": [slot_row], "degraded": False}),
+        intent_port=StubIntentPort({"status": "admitted", "slot_id": "slot-1"}),
+        events_port=StubEventsPort(),
+        market_data_client=StubMarketData(2000),
+        clock=lambda: now,
+        idle_wait_fn=lambda seconds: idle_waits.append(seconds),
+    )
+    mono_values = iter([1000.0, 1000.0, 1010.0, 1010.0])
+
+    with patch("trex_tvr.runtime.daemon.time.monotonic", side_effect=lambda: next(mono_values)):
+        with patch("trex_tvr.runtime.daemon.time.sleep") as sleep:
+            daemon.run_forever(_max_cycles=1)
+
+    assert idle_waits == [50.0]
+    sleep.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

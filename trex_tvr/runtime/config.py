@@ -27,6 +27,7 @@ import os
 import tomllib
 from dataclasses import dataclass, field
 from typing import Any, Optional
+from urllib.parse import parse_qs, urlsplit
 
 _TRUE = {"1", "true", "yes", "on"}
 _FALSE = {"0", "false", "no", "off"}
@@ -83,6 +84,15 @@ class ExecutionConfig:
 
 
 @dataclass(frozen=True)
+class RabbitMQConnectionConfig:
+    """Application-owned RabbitMQ liveness profile (issue #6)."""
+
+    heartbeat_seconds: int = 30
+    blocked_connection_timeout_seconds: int = 30
+    socket_timeout_seconds: int = 10
+
+
+@dataclass(frozen=True)
 class Config:
     instance_key: str
     rabbitmq_url: str
@@ -93,6 +103,7 @@ class Config:
     exit: Optional[ExitConfig] = None
     strategy_params: dict[str, dict[str, Any]] = field(default_factory=dict)
     execution: ExecutionConfig = ExecutionConfig()
+    rabbitmq_connection: RabbitMQConnectionConfig = RabbitMQConnectionConfig()
     # BAT-002 REQ-006: poll_interval replaces poll_interval_seconds (unit: seconds, int, floor 60s).
     poll_interval: int = 60
     rpc_timeout_seconds: float = 5.0
@@ -180,6 +191,52 @@ def _parse_execution(raw: Any) -> ExecutionConfig:
     return ExecutionConfig(timeout_sec=timeout_sec, slippage_pct=slippage_pct)
 
 
+_RABBITMQ_URL_TUNING_KEYS = {
+    "heartbeat",
+    "blocked_connection_timeout",
+    "socket_timeout",
+}
+
+
+def _positive_int(raw: Any, key: str, default: int) -> int:
+    try:
+        value = int(default if raw is None else raw)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"rabbitmq_connection.{key} must be an integer: {exc}") from exc
+    if value < 1:
+        raise ConfigError(f"rabbitmq_connection.{key} must be >= 1")
+    return value
+
+
+def _parse_rabbitmq_connection(raw: Any, rabbitmq_url: str) -> RabbitMQConnectionConfig:
+    """Parse typed tuning and reject ambiguous URL-level duplicates."""
+    try:
+        query_keys = set(parse_qs(urlsplit(rabbitmq_url).query, keep_blank_values=True))
+    except ValueError as exc:
+        raise ConfigError(f"invalid rabbitmq_url: {exc}") from exc
+    duplicates = sorted(query_keys & _RABBITMQ_URL_TUNING_KEYS)
+    if duplicates:
+        raise ConfigError(
+            "rabbitmq_url must not define application-owned tuning parameters: "
+            + ", ".join(duplicates)
+        )
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ConfigError("[rabbitmq_connection] must be a table")
+    return RabbitMQConnectionConfig(
+        heartbeat_seconds=_positive_int(raw.get("heartbeat_seconds"), "heartbeat_seconds", 30),
+        blocked_connection_timeout_seconds=_positive_int(
+            raw.get("blocked_connection_timeout_seconds"),
+            "blocked_connection_timeout_seconds",
+            30,
+        ),
+        socket_timeout_seconds=_positive_int(
+            raw.get("socket_timeout_seconds"), "socket_timeout_seconds", 10
+        ),
+    )
+
+
 def load_config(path: str, env_file: Optional[str] = None) -> Config:
     """Load + validate config from a TOML path. Raises ConfigError (fail-closed).
 
@@ -201,6 +258,10 @@ def _from_mapping(raw: dict) -> Config:
     rabbitmq_url = os.environ.get("TREX_RABBITMQ_URL") or raw.get("rabbitmq_url")
     if not rabbitmq_url:
         raise ConfigError("missing required config: rabbitmq_url (or TREX_RABBITMQ_URL)")
+    rabbitmq_url = str(rabbitmq_url)
+    rabbitmq_connection = _parse_rabbitmq_connection(
+        raw.get("rabbitmq_connection"), rabbitmq_url
+    )
 
     # [kis_data_hub] TOML table is optional — env may supply everything (12-factor).
     kdh_raw = raw.get("kis_data_hub")
@@ -290,13 +351,14 @@ def _from_mapping(raw: dict) -> Config:
 
     return Config(
         instance_key=str(raw.get("instance_key", "default")),
-        rabbitmq_url=str(rabbitmq_url),
+        rabbitmq_url=rabbitmq_url,
         kis_data_hub=kis,
         schedule=schedule,
         exit=exit_cfg,
         strategy_id=str(strategy_id),
         strategy_params=dict(strat_raw),
         execution=execution_cfg,
+        rabbitmq_connection=rabbitmq_connection,
         poll_interval=poll_interval,
         rpc_timeout_seconds=float(raw.get("rpc_timeout_seconds", 5.0)),
         redis_url=str(redis_url),

@@ -41,3 +41,11 @@ end   = "20:00"
 [execution]
 timeout_sec = 30
 slippage_pct = 0.5
+
+# RabbitMQ liveness profile owned and validated by TVR. Do not duplicate these
+# as heartbeat/blocked_connection_timeout/socket_timeout query parameters in
+# TREX_RABBITMQ_URL; duplicate authority fails startup.
+[rabbitmq_connection]
+heartbeat_seconds = 30
+blocked_connection_timeout_seconds = 30
+socket_timeout_seconds = 10

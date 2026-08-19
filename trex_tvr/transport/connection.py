@@ -16,16 +16,35 @@ _DIRECT_REPLY_TO = "amq.rabbitmq.reply-to"
 class PikaConnection:
     """Thin wrapper over a pika BlockingConnection (lazy connect)."""
 
-    def __init__(self, rabbitmq_url: str) -> None:
+    def __init__(
+        self,
+        rabbitmq_url: str,
+        *,
+        heartbeat_seconds: int = 30,
+        blocked_connection_timeout_seconds: int = 30,
+        socket_timeout_seconds: int = 10,
+    ) -> None:
         self.rabbitmq_url = rabbitmq_url
+        self.heartbeat_seconds = heartbeat_seconds
+        self.blocked_connection_timeout_seconds = blocked_connection_timeout_seconds
+        self.socket_timeout_seconds = socket_timeout_seconds
         self._connection = None
         self._channel = None
 
     def connect(self) -> None:
         import pika  # imported here so the module loads without a live broker.
 
-        self._connection = pika.BlockingConnection(pika.URLParameters(self.rabbitmq_url))
-        self._channel = self._connection.channel()
+        try:
+            parameters = pika.URLParameters(self.rabbitmq_url)
+            parameters.heartbeat = self.heartbeat_seconds
+            parameters.blocked_connection_timeout = self.blocked_connection_timeout_seconds
+            parameters.socket_timeout = self.socket_timeout_seconds
+            self._connection = pika.BlockingConnection(parameters)
+            self._channel = self._connection.channel()
+            self._channel.confirm_delivery()
+        except pika.exceptions.AMQPError as exc:
+            self.close()
+            raise TransportUnavailableError(f"RabbitMQ connection/setup error: {exc}") from exc
 
     @property
     def connected(self) -> bool:
@@ -44,7 +63,23 @@ class PikaConnection:
         return self._connection
 
     def process_events(self, time_limit: float) -> None:
-        self.connection.process_data_events(time_limit=time_limit)
+        import pika
+
+        try:
+            self.connection.process_data_events(time_limit=time_limit)
+        except pika.exceptions.AMQPError as exc:
+            raise TransportUnavailableError(f"RabbitMQ idle heartbeat error: {exc}") from exc
+
+    def wait_with_heartbeats(self, duration: float) -> None:
+        """Wait for the cadence remainder while continuously servicing AMQP I/O."""
+        deadline = time.monotonic() + duration
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            # process_data_events may return early after any event/timer. Looping
+            # preserves the cadence floor while servicing heartbeats promptly.
+            self.process_events(time_limit=min(1.0, remaining))
 
     def rpc_call(
         self,
@@ -71,7 +106,7 @@ class PikaConnection:
             consumer_tag = channel.basic_consume(
                 queue=_DIRECT_REPLY_TO, on_message_callback=_on_reply, auto_ack=True
             )
-            channel.basic_publish(
+            confirmed = channel.basic_publish(
                 exchange="",
                 routing_key=routing_key,
                 properties=pika.BasicProperties(
@@ -81,6 +116,10 @@ class PikaConnection:
                 ),
                 body=body,
             )
+            if confirmed is False:
+                raise TransportUnavailableError(
+                    "RabbitMQ publisher confirm negative acknowledgement"
+                )
             deadline = time.monotonic() + timeout
             while "body" not in holder:
                 remaining = deadline - time.monotonic()
@@ -88,7 +127,7 @@ class PikaConnection:
                     raise RpcTimeoutError(f"no reply for correlation_id={correlation_id!r}")
                 self.connection.process_data_events(time_limit=min(0.5, remaining))
         except pika.exceptions.AMQPError as exc:
-            raise TransportUnavailableError(f"RabbitMQ transport error: {exc}") from exc
+            raise TransportUnavailableError(f"RabbitMQ publish/reply transport error: {exc}") from exc
         finally:
             if consumer_tag is not None:
                 try:
@@ -105,7 +144,10 @@ class PikaConnection:
     def close(self) -> None:
         try:
             if self._connection is not None and getattr(self._connection, "is_open", False):
-                self._connection.close()
+                try:
+                    self._connection.close()
+                except Exception:  # noqa: BLE001 — stale/reset streams cannot close cleanly.
+                    pass
         finally:
             self._connection = None
             self._channel = None

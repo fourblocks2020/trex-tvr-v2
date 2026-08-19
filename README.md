@@ -70,6 +70,14 @@ trex-tvr-backtest --config instance.example --date-range 20260501:20260612 \
   decision 안에서는 멱등이고, 이후 holding snapshot의 독립 판단은 새 키를 사용한다.
 - **Snapshot-only execution boundary**: TVR은 core slot snapshot만 전략 판단 입력으로
   사용한다. broker/fill event, retryability 또는 attempt identity를 구독하지 않는다.
+- **RabbitMQ resilience**: TVR typed config가 heartbeat 30초, blocked connection timeout
+  30초, socket timeout 10초의 기본 profile을 소유한다. 같은 tuning 값을
+  `TREX_RABBITMQ_URL` query에 중복 지정하면 credential을 출력하지 않고 startup을
+  거부한다. Slot/intent RPC request는 publisher confirm을 사용하지만 confirm은
+  RabbitMQ broker acceptance일 뿐 core admission 또는 주문 실행 완료가 아니다.
+- **Ambiguous intent outcome**: intent RPC 중 reset/timeout이 발생하면 TVR은 broker
+  결과를 추론하거나 local retry/fresh intent를 만들지 않는다. 기존 cycle을 중단하고
+  reconnect한 뒤 다음 cycle의 authoritative core slot snapshot으로 재수렴한다.
 - **Venue**: TVR buy/sell intent는 venue를 보내지 않으며 core가 SOR로 정규화한다.
 - **strategy_params** (target_weight etc.) come from portfolio-hub `strategy_sets` → trex-core
   slot row → daemon eval_asset. TVR config TOML carries runtime settings only.
