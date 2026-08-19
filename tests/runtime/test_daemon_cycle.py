@@ -103,6 +103,7 @@ def test_full_cycle_emits_buy_intent_for_inactive_slot():
     payload = result["intents"][0]["payload"]
     assert payload["intent_type"] == "buy"
     assert payload["slot_id"] == "slot-1"
+    assert "venue" not in payload
     # BAT-002 REQ-007: intent_id now includes instance_key.
     assert payload["intent_id"] == "tvr_v1:default:2026-06-08:slot-1"
     # REQ-003 AC-2: TVR buy intent has no stop_loss_price / take_profit_price
@@ -396,6 +397,41 @@ def test_ac15_nxt_session_without_nxt_market_suppresses_intent():
     assert result["intents"] == []
     diag_reasons = [d["reason"] for d in result.get("diagnostics", [])]
     assert "market_not_eligible" in diag_reasons
+
+
+def test_ac15_nxt_session_without_nxt_market_suppresses_sell():
+    """The common markets gate also suppresses an otherwise eligible holding sell."""
+    now = datetime(2026, 6, 8, 16, 0, tzinfo=KST)
+    params = {"target_weight": 0.30, "rebalance_band_pct": 5.0, "min_trade_krw": 10000}
+    slot_row = holding_slot(qty=20, cash_balance=100_000, strategy_params=params)
+    slot_row["markets"] = ["KRX"]
+    slot = StubSlotPort({"slots": [slot_row], "degraded": False})
+    intent = StubIntentPort({"status": "admitted", "slot_id": "slot-1"})
+    daemon = _daemon_with_holiday(
+        slot,
+        intent,
+        StubMarketData(5000),
+        now,
+        holiday_cache=_HolidayCacheAlwaysTrading(),
+    )
+
+    result = daemon.run_decision_cycle()
+
+    assert result["status"] == "no_op"
+    assert result["intents"] == []
+    assert intent.sell_submitted == []
+    assert "market_not_eligible" in [d["reason"] for d in result["diagnostics"]]
+
+
+def test_build_daemon_does_not_wire_legacy_event_consumer():
+    """Static regression: runtime construction remains snapshot/intent only."""
+    import inspect
+
+    from trex_tvr.runtime.daemon import build_daemon
+
+    source = inspect.getsource(build_daemon)
+    assert "PikaEventsConsumer" not in source
+    assert "events_port=" not in source
 
 
 def test_ac15_nxt_session_empty_markets_suppresses_intent():

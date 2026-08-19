@@ -1,10 +1,8 @@
-"""events subscriber — per-strategy queue `trex.events.strategy.{strategy_id}`.
+"""Legacy compatibility event subscriber; not wired into the TVR runtime.
 
-The daemon only observes events (fills, slot transitions) — including sell fills,
-which trex-core's safety-sell emits. It never publishes sell intents. `sequence_at`
-is last-wins; state authority is trex-core. The queue/binding are derived from the
-configured `strategy_id` (contract: `trex.events.strategy.{strategy_id}`, binding
-`*.{strategy_id}.#`) — do NOT hardcode a strategy name here.
+Issue #5 makes decision execution snapshot-only: ``build_daemon`` does not construct
+this consumer and ``run_decision_cycle`` does not poll it. The module remains only to
+avoid breaking external imports while that legacy surface is retired separately.
 """
 from __future__ import annotations
 

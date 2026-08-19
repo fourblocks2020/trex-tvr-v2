@@ -67,8 +67,8 @@ trex-tvr-v1/
 ## Package / Module Responsibilities
 
 - `trex_tvr/strategies/`
-  - `base.py`: BuyStrategy ABC + BuySignal/HoldDecision/Diagnostic dataclass (계약)
-  - `example_strategy.py`: TvrStrategy (scaffold placeholder; TVR 로직 교체 예정)
+  - `base.py`: Strategy ABC + BuySignal/SellSignal/HoldDecision/Diagnostic dataclass (계약)
+  - `tvr_strategy.py`: TvrStrategy constant-mix 리밸런싱 로직
   - `registry.py`: 전략 등록/instantiate/schedule 해석. 인프라 무import.
 - `trex_tvr/market_data/`
   - `kis_data_hub_client.py`: httpx 기반 현재가/분봉 조달
@@ -101,8 +101,6 @@ trex-tvr-v1/
 
 ## Current Gaps / Planned Changes
 
-- 리밸런싱 sell-intent 경로 미구현 — transport/intent_builder에 sell-intent 추가 필요 (첫 Discovery 대상).
-- TvrStrategy 실제 리밸런싱 로직 미구현 — 현재는 scaffold placeholder.
 - TVR 파라미터(target_weight, rebalance_threshold) 미확정.
 
 ## Update Triggers

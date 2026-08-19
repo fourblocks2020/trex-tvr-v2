@@ -1,5 +1,9 @@
 # BAT-002 Implementation Record
 
+> **Superseded boundary note (issue #5):** 이 historical BAT 기록의 `20:00:00`
+> 포함 표기는 current contract에서 대체되었다. runtime은 NXT-only를
+> `15:30:00 <= t < 20:00:00`으로 판정하고 `20:00:00`부터 OUT_OF_SESSION이다.
+
 **Batch**: BAT-002 `bat-002_20260706_session-cadence-fanin`
 **Discovery**: dcy-002
 **REQs**: REQ-005, REQ-006, REQ-007

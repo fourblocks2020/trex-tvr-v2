@@ -1,8 +1,8 @@
 """Pure wire framing + Port protocols + error contract for trex-core transport.
 
 No pika / network here — these helpers are deterministic and unit-testable, and
-serve as the snapshot/intent/event schema guards. The `Pika*`
-clients build on them.
+serve as snapshot/intent schema guards. Legacy event types and parsers remain for
+import compatibility but are not wired into the snapshot-only decision runtime.
 """
 from __future__ import annotations
 
@@ -46,6 +46,8 @@ class IntentPort(Protocol):
 
 @runtime_checkable
 class EventsPort(Protocol):
+    """Legacy compatibility seam; the runtime does not poll this port."""
+
     def poll_events(self, max_messages: int = 100) -> list[dict]: ...
 
 
@@ -166,7 +168,7 @@ def parse_sell_intent_response(body: Any) -> dict:
 
 
 def parse_event(body: Any) -> dict:
-    """Validate + normalize a `trex.events` message."""
+    """Validate a legacy event payload; not used by the decision runtime."""
     data = _require_dict(body, "event")
     for required in ("event_type", "slot_id", "sequence_at"):
         if required not in data:
