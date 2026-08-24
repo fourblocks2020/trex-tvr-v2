@@ -1,6 +1,7 @@
-"""REQ-002 transport sell-intent 경로 단위 테스트.
+"""REQ-002 transport buy/sell-intent 경로 단위 테스트.
 
 Tests:
+  - build_buy_intent() 필드 구조 + venue
   - build_sell_intent() 필드 구조 + 멱등 intent_id
   - parse_sell_intent_response()
   - IntentPort Protocol (submit_buy + submit_sell)
@@ -10,9 +11,35 @@ from __future__ import annotations
 
 import pytest
 
-from trex_tvr.strategies.base import SellSignal
-from trex_tvr.runtime.intent_builder import build_sell_intent, make_sell_intent_id
+from trex_tvr.runtime.intent_builder import build_buy_intent, build_sell_intent, make_sell_intent_id
+from trex_tvr.strategies.base import BuySignal, SellSignal
 from trex_tvr.transport.base import IntentPort, WireSchemaError, parse_sell_intent_response
+
+
+# ---------------------------------------------------------------------------
+def test_build_buy_intent_includes_required_venue():
+    signal = BuySignal(
+        symbol="005930",
+        target_qty=3,
+        allocated_capital=100000,
+        reason="rebalance_buy",
+        strategy_id="tvr_v1",
+        entry_price=71000,
+    )
+    payload = build_buy_intent(
+        signal,
+        trading_date="2026-07-04",
+        slot_id="slot-buy",
+        stop_loss_pct=0.0,
+        take_profit_pct=0.0,
+        strategy_id="tvr_v1",
+        venue="KRX",
+    )
+
+    assert payload["intent_type"] == "buy"
+    assert payload["venue"] == "KRX"
+    assert payload["slot_id"] == "slot-buy"
+    assert payload["entry_price"] == 71000
 
 
 # ---------------------------------------------------------------------------
@@ -27,6 +54,7 @@ def test_ac1_build_sell_intent_fields():
         trading_date="2026-07-04",
         slot_id="slot-abc",
         strategy_id="tvr_v1",
+        venue="KRX",
         decision_at="2026-07-04T10:00:00+09:00",
     )
 
@@ -39,6 +67,7 @@ def test_ac1_build_sell_intent_fields():
     assert payload["qty"] == 4
     assert payload["reason"] == "rebalance_sell"
     assert payload["sell_strategy_id"] == "tvr_v1"
+    assert payload["venue"] == "KRX"
     # No exit fields (REQ-002: stop_loss_price / take_profit_price / forced_close_at absent)
     assert "stop_loss_price" not in payload
     assert "take_profit_price" not in payload
@@ -54,7 +83,12 @@ def test_ac2_sell_intent_id_is_stable_within_decision_and_changes_next_cycle():
         symbol="005930", slot_id="slot-abc", qty=4,
         reason="rebalance_sell", strategy_id="tvr_v1",
     )
-    common = dict(trading_date="2026-07-04", slot_id="slot-abc", strategy_id="tvr_v1")
+    common = {
+        "trading_date": "2026-07-04",
+        "slot_id": "slot-abc",
+        "strategy_id": "tvr_v1",
+        "venue": "KRX",
+    }
     id1 = build_sell_intent(
         signal, **common, decision_at="2026-07-04T10:00:00+09:00"
     )["intent_id"]
@@ -113,6 +147,7 @@ def test_ac8_build_sell_intent_invalid_qty():
             trading_date="2026-07-04",
             slot_id="slot-1",
             strategy_id="tvr_v1",
+            venue="KRX",
             decision_at="cycle-1",
         )
 
@@ -127,6 +162,7 @@ def test_ac8_build_sell_intent_negative_qty():
             trading_date="2026-07-04",
             slot_id="slot-1",
             strategy_id="tvr_v1",
+            venue="KRX",
             decision_at="cycle-1",
         )
 
@@ -147,3 +183,49 @@ def test_sell_intent_id_namespace_prefix():
 def test_sell_intent_id_requires_decision_cycle_token():
     with pytest.raises(ValueError, match="decision_at"):
         make_sell_intent_id("tvr_v1", "2026-07-04", "slot-1")
+
+
+@pytest.mark.parametrize(
+    ("builder", "kwargs"),
+    [
+        (
+            build_buy_intent,
+            {
+                "signal": BuySignal(
+                    symbol="005930",
+                    target_qty=3,
+                    allocated_capital=100000,
+                    reason="rebalance_buy",
+                    strategy_id="tvr_v1",
+                    entry_price=71000,
+                ),
+                "trading_date": "2026-07-04",
+                "slot_id": "slot-buy",
+                "stop_loss_pct": 0.0,
+                "take_profit_pct": 0.0,
+                "strategy_id": "tvr_v1",
+            },
+        ),
+        (
+            build_sell_intent,
+            {
+                "signal": SellSignal(
+                    symbol="005930",
+                    slot_id="slot-sell",
+                    qty=1,
+                    reason="rebalance_sell",
+                    strategy_id="tvr_v1",
+                ),
+                "trading_date": "2026-07-04",
+                "slot_id": "slot-sell",
+                "strategy_id": "tvr_v1",
+                "decision_at": "cycle-1",
+            },
+        ),
+    ],
+)
+def test_intent_builders_require_valid_venue(builder, kwargs):
+    with pytest.raises(ValueError, match="venue"):
+        builder(**kwargs)
+    with pytest.raises(ValueError, match="venue"):
+        builder(**{**kwargs, "venue": "SOR"})

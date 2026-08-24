@@ -10,8 +10,7 @@ import json
 
 import pytest
 
-from trex_tvr.transport.base import build_slots_request, WireSchemaError
-
+from trex_tvr.transport.base import WireSchemaError, build_slots_request
 
 # ---------------------------------------------------------------------------
 # build_slots_request
@@ -55,7 +54,15 @@ class _StubConnection:
         self._rpc_response = rpc_response
         self.last_body_bytes: bytes | None = None
 
-    def rpc_call(self, routing_key: str, body: bytes, *, correlation_id: str, timeout: float) -> bytes:
+    def rpc_call(
+        self,
+        routing_key: str,
+        body: bytes,
+        *,
+        correlation_id: str,
+        timeout: float,
+        delivery_mode: int | None = None,
+    ) -> bytes:
         self.last_body_bytes = body
         return json.dumps(self._rpc_response).encode("utf-8")
 
@@ -98,3 +105,45 @@ def test_pika_slot_client_omits_strategy_when_none():
 
     wire = json.loads(conn.last_body_bytes)
     assert "strategy" not in wire
+
+
+def test_pika_intent_client_buy_preserves_venue():
+    from trex_tvr.transport.intent_client import PikaIntentClient
+
+    conn = _StubConnection({"intent_id": "buy-1", "status": "admitted", "slot_id": "slot-1"})
+    client = PikaIntentClient(conn, instance_key="default")
+
+    result = client.submit_buy({
+        "intent_type": "buy",
+        "intent_id": "buy-1",
+        "slot_id": "slot-1",
+        "qty": 1,
+        "entry_price": 1000,
+        "strategy_id": "tvr_v1",
+        "venue": "KRX",
+    })
+
+    wire = json.loads(conn.last_body_bytes)
+    assert wire["venue"] == "KRX"
+    assert result["status"] == "admitted"
+
+
+def test_pika_intent_client_sell_preserves_venue():
+    from trex_tvr.transport.intent_client import PikaIntentClient
+
+    conn = _StubConnection({"intent_id": "sell-1", "status": "admitted", "slot_id": "slot-1"})
+    client = PikaIntentClient(conn, instance_key="default")
+
+    result = client.submit_sell({
+        "intent_type": "sell",
+        "intent_id": "sell-1",
+        "slot_id": "slot-1",
+        "qty": 1,
+        "reason": "rebalance_sell",
+        "sell_strategy_id": "tvr_v1",
+        "venue": "NXT",
+    })
+
+    wire = json.loads(conn.last_body_bytes)
+    assert wire["venue"] == "NXT"
+    assert result["status"] == "admitted"

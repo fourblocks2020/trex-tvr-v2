@@ -43,6 +43,7 @@
 - `allocated_capital` :: int? :: 배정 자본 (KRW)
 - `entry_price` :: int :: 결정 시점 현재가 (역산 제거용)
 - `strategy_id` :: str :: `"tvr_v1"`
+- `venue` :: str :: `"NXT"` | `"KRX"` — session 기반 명시 라우팅 값
 - `stop_loss_price` :: int? :: core safety-sell SL 가격 트리거
 - `take_profit_price` :: int? :: core safety-sell TP 가격 트리거
 - `forced_close_at` :: ISO-8601? :: 강제 마감 시각 (없으면 core default)
@@ -55,7 +56,7 @@
 
 - buy intent는 slot/day 단위로 dedup한다.
 - sell intent는 한 snapshot decision의 `decision_at`을 키에 포함한다. 동일 decision의 transport 중복은 dedup하고 이후 holding snapshot의 새 전략 판단은 독립 키를 사용한다.
-- buy/sell intent는 venue를 보내지 않으며 core의 omitted venue→SOR 계약을 사용한다.
+- buy/sell intent는 `venue`를 항상 포함한다. NXT-only session의 eligible slot은 `NXT`, 그 외 tradeable eligible slot은 `KRX`를 사용한다.
 
 ## Entity: `HolidayCache (Redis, 선택)`
 

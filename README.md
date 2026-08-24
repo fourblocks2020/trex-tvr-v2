@@ -78,7 +78,7 @@ trex-tvr-backtest --config instance.example --date-range 20260501:20260612 \
 - **Ambiguous intent outcome**: intent RPC 중 reset/timeout이 발생하면 TVR은 broker
   결과를 추론하거나 local retry/fresh intent를 만들지 않는다. 기존 cycle을 중단하고
   reconnect한 뒤 다음 cycle의 authoritative core slot snapshot으로 재수렴한다.
-- **Venue**: TVR buy/sell intent는 venue를 보내지 않으며 core가 SOR로 정규화한다.
+- **Venue**: TVR buy/sell intent는 `venue`를 항상 포함한다. NXT-only 구간은 `NXT`, 그 외 tradeable session은 `KRX`로 라우팅한다.
 - **strategy_params** (target_weight etc.) come from portfolio-hub `strategy_sets` → trex-core
   slot row → daemon eval_asset. TVR config TOML carries runtime settings only.
 - **trex-core wire dependencies** (strategy filter + row strategy_params) are additive changes

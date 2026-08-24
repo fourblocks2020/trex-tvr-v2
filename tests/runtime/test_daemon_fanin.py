@@ -24,8 +24,8 @@ from tests.conftest import (
     StubIntentPort,
     StubMarketData,
     StubSlotPort,
-    inactive_slot,
     holding_slot,
+    inactive_slot,
 )
 from trex_tvr.runtime.config import Config, ExecutionConfig, KisDataHubConfig, ScheduleEntry
 from trex_tvr.runtime.daemon import Daemon
@@ -326,12 +326,14 @@ def test_ac7_build_buy_intent_includes_instance_key():
         trading_date="2026-07-06",
         slot_id="slot_001",
         strategy_id="tvr_v1",
+        venue="KRX",
         instance_key="inst_a",
         stop_loss_pct=0.0,
         take_profit_pct=0.0,
     )
     assert "inst_a" in payload["intent_id"]
     assert payload["intent_id"] == "tvr_v1:inst_a:2026-07-06:slot_001"
+    assert payload["venue"] == "KRX"
 
 
 # ---------------------------------------------------------------------------
@@ -347,12 +349,14 @@ def test_ac8_build_sell_intent_includes_instance_key():
         trading_date="2026-07-06",
         slot_id="slot_002",
         strategy_id="tvr_v1",
+        venue="NXT",
         instance_key="inst_b",
         decision_at="cycle-1",
     )
     assert payload["intent_id"].startswith("sell:")
     assert "inst_b" in payload["intent_id"]
     assert payload["intent_id"] == "sell:tvr_v1:inst_b:2026-07-06:slot_002:cycle-1"
+    assert payload["venue"] == "NXT"
 
 
 # ---------------------------------------------------------------------------

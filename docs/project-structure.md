@@ -82,7 +82,7 @@ trex-tvr-v1/
 - `trex_tvr/runtime/`
   - `daemon.py`: 결정-사이클 엔진 (schedule gate → capacity pre-flight → fan-out eval → intent)
   - `config.py`: per-instance TOML 파서
-  - `intent_builder.py`: BuySignal/SellSignal → venue 없는 wire DTO 변환
+  - `intent_builder.py`: BuySignal/SellSignal → session 기반 `venue`를 포함한 wire DTO 변환
   - `cli.py`: `trex-tvr` 커맨드 진입점
 - `trex_tvr/backtest/`
   - 전략-무관 백테스트 (로컬 분봉 덤프 시간 리플레이, exit 시뮬레이터 포함)

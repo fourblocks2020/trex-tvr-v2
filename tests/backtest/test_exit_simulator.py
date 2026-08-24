@@ -47,7 +47,7 @@ def test_threshold_matches_intent_builder(sim: ExitSimulator) -> None:
     )
     payload = build_buy_intent(
         signal, trading_date="2026-06-10", slot_id="slot-1",
-        stop_loss_pct=2.0, take_profit_pct=4.0, strategy_id="tvr_v1",
+        stop_loss_pct=2.0, take_profit_pct=4.0, strategy_id="tvr_v1", venue="KRX",
     )
     assert payload["stop_loss_price"] == thresholds["stop_loss_price"]
     assert payload["take_profit_price"] == thresholds["take_profit_price"]
@@ -159,4 +159,4 @@ def test_sell_tax_default_zero_backward_compatible() -> None:
     assert sim.sell_tax_pct == 0.0
     candles = [_bar("09:16", low=9900, high=10500, close=10400)]
     rec = sim.simulate(10000, qty=5, entry_time=_dt("09:15"), candles=candles)
-    assert rec.realized_pnl == round((10400 - 10000) * 5)
+    assert rec.realized_pnl == (10400 - 10000) * 5

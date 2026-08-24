@@ -38,7 +38,7 @@
 ### Inputs
 
 - `trex.slots.req` :: `{filter: inactive,holding, strategy: tvr_v1}` — 현재 slot snapshot 조회
-- `trex.intent.req` buy/sell :: `{intent_type, intent_id, slot_id, qty, ...}` — admission 제출. TVR은 `venue`를 생략하며 core가 SOR로 정규화한다.
+- `trex.intent.req` buy/sell :: `{intent_type, intent_id, slot_id, qty, venue, ...}` — admission 제출. `venue`는 필수이며 `"NXT"` 또는 `"KRX"` 중 하나다.
 
 ### Outputs
 
@@ -55,6 +55,8 @@
 
 - wire 계약 소유자는 trex-core. trex-tvr-v1은 JSON payload 호환만 공유, `trex_core` 코드 무import.
 - intent `correlation_id`(=`intent_id`)가 멱등키 — core `intent_log`가 dedup.
+- TVR venue routing: NXT-only (`08:00:00 <= t < 08:50:00`, `15:30:00 <= t < 20:00:00`) + slot `markets`에 `NXT` 포함 → `venue="NXT"`. 그 외 tradeable session의 eligible slot → `venue="KRX"`.
+- 기존 core #61 omitted venue→SOR contract는 TVR 기준 superseded다. TVR은 더 이상 intent에서 `venue`를 생략하지 않는다.
 - TVR은 KIS failure, broker rejection detail, attempt identity, retryability, timeout 또는 fill/cancel raw event를 소비·저장하지 않는다. 다음 slot snapshot만 후속 판단에 사용한다.
 
 ## Interface: `kis-data-hub HTTP client`
