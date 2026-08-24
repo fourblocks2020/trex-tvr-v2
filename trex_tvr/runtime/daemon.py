@@ -45,9 +45,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Optional
+from typing import Any
 
 from trex_tvr.market_data.kis_data_hub_client import KisDataHubClient, KisDataHubClientError
 from trex_tvr.runtime.config import Config, load_config
@@ -136,6 +137,10 @@ def _has_nxt_market(row: dict) -> bool:
     return "NXT" in markets
 
 
+def _resolve_intent_venue(*, nxt_only: bool) -> str:
+    return "NXT" if nxt_only else "KRX"
+
+
 class Daemon:
     """Orchestrates the rebalancing decision cycle over injected ports (testable).
 
@@ -149,18 +154,18 @@ class Daemon:
         config: Config,
         *,
         # BAT-002 REQ-007: per-instance maps (primary).
-        slot_ports: Optional[dict[str, SlotPort]] = None,
-        intent_ports: Optional[dict[str, IntentPort]] = None,
+        slot_ports: dict[str, SlotPort] | None = None,
+        intent_ports: dict[str, IntentPort] | None = None,
         # Legacy single-port (backward compat — tests, build_daemon pre-fanin).
-        slot_port: Optional[SlotPort] = None,
-        intent_port: Optional[IntentPort] = None,
-        events_port: Optional[EventsPort] = None,
+        slot_port: SlotPort | None = None,
+        intent_port: IntentPort | None = None,
+        events_port: EventsPort | None = None,
         market_data_client: Any,
         clock: Callable[[], datetime] = _now_kst,
-        reconnect_fn: Optional[Callable[[], None]] = None,
-        idle_wait_fn: Optional[Callable[[float], None]] = None,
+        reconnect_fn: Callable[[], None] | None = None,
+        idle_wait_fn: Callable[[float], None] | None = None,
         holiday_cache: Any = None,
-        status_path: Optional[str] = None,
+        status_path: str | None = None,
     ) -> None:
         self.config = config
 
@@ -199,13 +204,13 @@ class Daemon:
         # Same-day reentry guard for BUY only: slot_ids admitted today; reset on new trading day.
         # Sell is re-evaluated every cycle (intent_id dedup at trex-core handles same-day dedup).
         self._admitted_slots: set[str] = set()
-        self._tracker_date: Optional[str] = None
+        self._tracker_date: str | None = None
         # REQ-004: initialize status snapshot
         self._snapshot = StatusSnapshot()
         registry.ensure_default_strategies_loaded()
 
     @staticmethod
-    def _eligible_for_eval(row: dict) -> Optional[str]:
+    def _eligible_for_eval(row: dict) -> str | None:
         """Return a diagnostic reason if a slot row is NOT an eval candidate, else None.
 
         TVR evaluates both inactive (initial buy) and holding (rebalancing buy/sell) slots.
@@ -238,9 +243,9 @@ class Daemon:
         self,
         *,
         cycle_status: str,
-        error: Optional[str] = None,
-        idle_reason: Optional[str] = None,
-        deps: Optional[DepsStatus] = None,
+        error: str | None = None,
+        idle_reason: str | None = None,
+        deps: DepsStatus | None = None,
     ) -> None:
         """Update the in-memory snapshot and write it atomically to file (best-effort)."""
         self._snapshot.last_cycle_ts = _now_kst().isoformat()
@@ -291,7 +296,7 @@ class Daemon:
 
         return merged, partial_degraded
 
-    def run_decision_cycle(self, now_kst: Optional[datetime] = None) -> dict:
+    def run_decision_cycle(self, now_kst: datetime | None = None) -> dict:
         now = now_kst or self._clock()
         if now.tzinfo is None:
             now = now.replace(tzinfo=_KST)
@@ -321,6 +326,7 @@ class Daemon:
         # Legacy holiday gate (holiday_cache used by session_calendar now; keep for safety).
         # Note: session_calendar already checks holiday via get_session_info above.
         # This block is a belt-and-suspenders fallback only if holiday_cache is wired separately.
+        intent_venue = _resolve_intent_venue(nxt_only=nxt_only)
         trading_date = now.date().isoformat()
         # Reset the buy reentry tracker at a new trading day.
         if self._tracker_date != trading_date:
@@ -429,7 +435,7 @@ class Daemon:
                 try:
                     updated_asset, decision = fut.result()
                     raw_results.append((updated_asset, decision))
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     raw_results.append(
                         (eval_asset, KisDataHubClientError(str(exc), error_class="other"))
                     )
@@ -482,14 +488,15 @@ class Daemon:
                     )
                     continue
                 # Build buy payload — no stop_loss/take_profit (TVR pure rebalancing, [exit] optional)
-                buy_kwargs: dict = dict(
-                    trading_date=trading_date,
-                    slot_id=slot_id,
-                    strategy_id=strategy.strategy_id,
-                    instance_key=source_instance,
-                    timeout_sec=self.config.execution.timeout_sec,
-                    slippage_pct=self.config.execution.slippage_pct,
-                )
+                buy_kwargs: dict = {
+                    "trading_date": trading_date,
+                    "slot_id": slot_id,
+                    "strategy_id": strategy.strategy_id,
+                    "venue": intent_venue,
+                    "instance_key": source_instance,
+                    "timeout_sec": self.config.execution.timeout_sec,
+                    "slippage_pct": self.config.execution.slippage_pct,
+                }
                 if self.config.exit is not None:
                     buy_kwargs["stop_loss_pct"] = self.config.exit.stop_loss_pct
                     buy_kwargs["take_profit_pct"] = self.config.exit.take_profit_pct
@@ -528,6 +535,7 @@ class Daemon:
                     trading_date=trading_date,
                     slot_id=slot_id,
                     strategy_id=strategy.strategy_id,
+                    venue=intent_venue,
                     instance_key=source_instance,
                     decision_at=now.isoformat(),
                 )
@@ -570,7 +578,7 @@ class Daemon:
             )
         return result
 
-    def run_forever(self, _max_cycles: Optional[int] = None) -> None:
+    def run_forever(self, _max_cycles: int | None = None) -> None:
         logger.info(
             "started: instance=%s strategy=%s poll=%ss instances=%s",
             self.config.instance_key,
@@ -628,20 +636,19 @@ class Daemon:
                             self._snapshot.deps.rabbitmq = "ok"
                             write_snapshot(self._snapshot, self._status_path)
                             backoff_attempt = 0
-                        except Exception as reconnect_exc:
+                        except Exception as reconnect_exc:  # noqa: BLE001
                             logger.error("reconnect failed: %s", reconnect_exc)
         except KeyboardInterrupt:
             logger.info("shutdown: KeyboardInterrupt")
             return
 
 
-def build_daemon(config: Config, status_path: Optional[str] = None) -> tuple["Daemon", Callable[[], None]]:
+def build_daemon(config: Config, status_path: str | None = None) -> tuple[Daemon, Callable[[], None]]:
     """Wire the real pika + kis-data-hub + Redis dependencies. Fail-closed startup.
 
     BAT-002 REQ-007: creates per-instance SlotPort/IntentPort maps from config.instances.
     """
     from trex_tvr.transport.connection import PikaConnection
-
     from trex_tvr.transport.intent_client import PikaIntentClient
     from trex_tvr.transport.slot_client import PikaSlotClient
 
@@ -688,8 +695,8 @@ def build_daemon(config: Config, status_path: Optional[str] = None) -> tuple["Da
     from trex_tvr.market_data.holiday_cache import HolidayCache
 
     # REQ-007: build per-instance port maps.
-    slot_ports: dict[str, "SlotPort"] = {}
-    intent_ports: dict[str, "IntentPort"] = {}
+    slot_ports: dict[str, SlotPort] = {}
+    intent_ports: dict[str, IntentPort] = {}
     for inst_key in config.instances:
         slot_ports[inst_key] = PikaSlotClient(conn, inst_key, config.rpc_timeout_seconds)
         intent_ports[inst_key] = PikaIntentClient(conn, inst_key, config.rpc_timeout_seconds)
@@ -726,7 +733,7 @@ def configure_logging(verbose: bool) -> None:
 
 
 def run_from_config(
-    config_path: str, env_file: Optional[str] = None, verbose: bool = False
+    config_path: str, env_file: str | None = None, verbose: bool = False
 ) -> int:  # pragma: no cover - integration entry.
     configure_logging(verbose)
     config = load_config(config_path, env_file=env_file)
@@ -738,7 +745,7 @@ def run_from_config(
     return 0
 
 
-def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - thin wrapper.
+def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin wrapper.
     from trex_tvr.runtime.cli import main as cli_main
 
     return cli_main(argv)

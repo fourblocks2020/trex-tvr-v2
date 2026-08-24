@@ -1,8 +1,13 @@
 """Buy/sell intent payload builders.
 
+TVR declares the execution venue explicitly on every buy/sell intent payload.
+The runtime session gate chooses `venue="NXT"` for NXT-only windows and
+`venue="KRX"` for the main KRX session.
+
 exit is delegated to trex-core's safety-sell by declaring stop_loss / take_profit /
 forced_close thresholds on the buy intent. TVR's own rebalancing sell path carries
-only slot, quantity, reason, strategy identity, and a decision-cycle idempotency key.
+only slot, quantity, reason, strategy identity, venue, and a decision-cycle
+idempotency key.
 
 REL-006 canonical target key is `slot_id` (slots[] round-trip). The
 buy payload carries `slot_id` and does NOT carry the deprecated `portfolio_id`,
@@ -21,9 +26,15 @@ byte-equivalent backward compatibility with core's default behavior.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from trex_tvr.strategies.base import BuySignal, SellSignal
+
+_VALID_VENUES = {"KRX", "NXT"}
+
+
+def _require_venue(venue: str | None) -> str:
+    if venue not in _VALID_VENUES:
+        raise ValueError("venue must be one of: 'KRX', 'NXT'")
+    return venue
 
 
 def make_intent_id(
@@ -66,10 +77,11 @@ def build_buy_intent(
     stop_loss_pct: float,
     take_profit_pct: float,
     strategy_id: str,
+    venue: str | None = None,
     instance_key: str = "default",
-    timeout_sec: Optional[int] = None,
-    slippage_pct: Optional[float] = None,
-    sell_strategy_id: Optional[str] = None,
+    timeout_sec: int | None = None,
+    slippage_pct: float | None = None,
+    sell_strategy_id: str | None = None,
 ) -> dict:
     """Map a BuySignal + exit pct into a REL-006 buy intent payload.
 
@@ -84,6 +96,7 @@ def build_buy_intent(
     """
     if not slot_id:
         raise ValueError("slot_id is required for a buy intent (REL-006 canonical key)")
+    venue = _require_venue(venue)
     entry = float(signal.entry_price)
     payload: dict = {
         "intent_type": "buy",
@@ -92,6 +105,7 @@ def build_buy_intent(
         "qty": int(signal.target_qty),
         "entry_price": int(signal.entry_price),
         "strategy_id": strategy_id,
+        "venue": venue,
         "stop_loss_price": round(entry * (1 - stop_loss_pct / 100.0)),
         "take_profit_price": round(entry * (1 + take_profit_pct / 100.0)),
     }
@@ -112,6 +126,7 @@ def build_sell_intent(
     trading_date: str,
     slot_id: str,
     strategy_id: str,
+    venue: str | None = None,
     instance_key: str = "default",
     decision_at: str,
 ) -> dict:
@@ -132,6 +147,7 @@ def build_sell_intent(
         raise ValueError("slot_id is required for a sell intent")
     if not isinstance(signal.qty, int) or signal.qty <= 0:
         raise ValueError(f"sell intent qty must be a positive int (got {signal.qty!r})")
+    venue = _require_venue(venue)
     return {
         "intent_type": "sell",
         "intent_id": make_sell_intent_id(
@@ -141,4 +157,5 @@ def build_sell_intent(
         "qty": int(signal.qty),
         "reason": signal.reason,
         "sell_strategy_id": strategy_id,
+        "venue": venue,
     }

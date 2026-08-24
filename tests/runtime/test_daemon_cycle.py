@@ -103,7 +103,7 @@ def test_full_cycle_emits_buy_intent_for_inactive_slot():
     payload = result["intents"][0]["payload"]
     assert payload["intent_type"] == "buy"
     assert payload["slot_id"] == "slot-1"
-    assert "venue" not in payload
+    assert payload["venue"] == "KRX"
     # BAT-002 REQ-007: intent_id now includes instance_key.
     assert payload["intent_id"] == "tvr_v1:default:2026-06-08:slot-1"
     # REQ-003 AC-2: TVR buy intent has no stop_loss_price / take_profit_price
@@ -136,6 +136,7 @@ def test_full_cycle_emits_sell_intent_for_holding_slot():
     assert payload["slot_id"] == "slot-1"
     assert payload["intent_id"].startswith("sell:tvr_v1:")
     assert payload["qty"] > 0
+    assert payload["venue"] == "KRX"
 
 
 def test_later_holding_snapshot_creates_independent_sell_without_broker_retry_input():
@@ -165,8 +166,8 @@ def test_later_holding_snapshot_creates_independent_sell_without_broker_retry_in
     first_id = first["intents"][0]["payload"]["intent_id"]
     second_id = second["intents"][0]["payload"]["intent_id"]
     assert first_id != second_id
-    assert "venue" not in first["intents"][0]["payload"]
-    assert "venue" not in second["intents"][0]["payload"]
+    assert first["intents"][0]["payload"]["venue"] == "KRX"
+    assert second["intents"][0]["payload"]["venue"] == "KRX"
 
 
 def test_out_of_schedule_skips():
@@ -375,6 +376,7 @@ def test_ac14_nxt_session_with_nxt_market_allows_intent():
     # Should have submitted a buy intent
     assert len(result["intents"]) == 1
     assert result["intents"][0]["payload"]["intent_type"] == "buy"
+    assert result["intents"][0]["payload"]["venue"] == "NXT"
 
 
 def test_ac15_nxt_session_without_nxt_market_suppresses_intent():
