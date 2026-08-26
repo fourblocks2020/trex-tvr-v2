@@ -8,4 +8,4 @@ Layers (dependency direction is one-way: runtime -> {strategies, market_data, tr
   - runtime/      : daemon orchestration (fan-out, gate stack, reconnect), config, intent builder, CLI
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

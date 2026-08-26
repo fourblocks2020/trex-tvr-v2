@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trex-tvr-v1"
-version = "0.1.0"
+version = "0.1.1"
 description = "Target-Value Rebalancer (TVR) — constant-mix 목표비율 리밸런싱 장기전략 데몬 (pure AMQP)"
 requires-python = ">=3.12"
 dependencies = [
