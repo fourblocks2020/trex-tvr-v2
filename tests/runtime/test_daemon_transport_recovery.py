@@ -5,11 +5,16 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.conftest import KST, StubEventsPort, StubMarketData, holding_slot, inactive_slot
+from tests.conftest import (
+    KST,
+    StubEventsPort,
+    StubMarketData,
+    holding_slot,
+    inactive_slot,
+)
 from trex_tvr.runtime.config import Config, KisDataHubConfig, ScheduleEntry
 from trex_tvr.runtime.daemon import Daemon
 from trex_tvr.transport.base import RpcTimeoutError
-
 
 _TVR_PARAMS = {
     "target_weight": 0.30,
@@ -122,5 +127,9 @@ def test_ambiguous_intent_reply_loss_reconnects_and_reads_snapshot_before_new_in
     assert slots.calls == 2
     assert len(intents.buy_payloads) + len(intents.sell_payloads) == 1
     assert len(intents.buy_payloads if side == "buy" else intents.sell_payloads) == 1
+    if side == "buy":
+        assert intents.buy_payloads[0]["intent_id"].startswith("buy:")
+    else:
+        assert intents.sell_payloads[0]["intent_id"].startswith("sell:")
     assert daemon._snapshot.deps.rabbitmq == "ok"
     assert daemon._snapshot.last_error is None

@@ -53,6 +53,7 @@ class _StubConnection:
     def __init__(self, rpc_response: dict) -> None:
         self._rpc_response = rpc_response
         self.last_body_bytes: bytes | None = None
+        self.last_correlation_id: str | None = None
 
     def rpc_call(
         self,
@@ -64,6 +65,7 @@ class _StubConnection:
         delivery_mode: int | None = None,
     ) -> bytes:
         self.last_body_bytes = body
+        self.last_correlation_id = correlation_id
         return json.dumps(self._rpc_response).encode("utf-8")
 
 
@@ -125,6 +127,7 @@ def test_pika_intent_client_buy_preserves_venue():
 
     wire = json.loads(conn.last_body_bytes)
     assert wire["venue"] == "KRX"
+    assert conn.last_correlation_id == wire["intent_id"]
     assert result["status"] == "admitted"
 
 
@@ -146,4 +149,5 @@ def test_pika_intent_client_sell_preserves_venue():
 
     wire = json.loads(conn.last_body_bytes)
     assert wire["venue"] == "NXT"
+    assert conn.last_correlation_id == wire["intent_id"]
     assert result["status"] == "admitted"

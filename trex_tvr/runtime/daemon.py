@@ -6,7 +6,7 @@ BAT-001 changes (TVR rebalancing expansion):
   - strategy_params from slot row: missing → Diagnostic(missing_strategy_params), skip.
   - entry_capital removed: TVR uses target_weight from strategy_params, not fixed KRW.
   - [exit] config is now optional: TVR buy intents have no stop_loss/take_profit.
-  - sell reentry guard: sell is re-evaluated every cycle (buy _admitted_slots guard intact).
+  - buy/sell decisions are re-evaluated from authoritative slot snapshots every cycle.
   - already_active: diagnostics recorded, next cycle re-convergence (no retry, no exception).
   - StatusSnapshot (REQ-004): written atomically after each cycle and on transport error.
 
@@ -20,7 +20,7 @@ BAT-002 changes (session calendar + cadence + fan-in):
   - REQ-007: config.instances list → per-instance SlotPort/IntentPort map (fan-in).
       Slots collected from each instance, tagged with _source_instance.
       Intents routed to source instance's IntentPort.
-      intent_id includes instance_key: {strategy}:{instance}:{date}:{slot}.
+      buy/sell intent_id includes instance_key; buy/sell decision ids are snapshot-cycle scoped.
       Partial failure: partial_degraded + continue. Total failure: degraded_hold.
 
 Issue #5 snapshot-only boundary:
@@ -201,10 +201,6 @@ class Daemon:
         self._idle_wait_fn = idle_wait_fn
         self._holiday_cache = holiday_cache
         self._status_path = status_path
-        # Same-day reentry guard for BUY only: slot_ids admitted today; reset on new trading day.
-        # Sell is re-evaluated every cycle (intent_id dedup at trex-core handles same-day dedup).
-        self._admitted_slots: set[str] = set()
-        self._tracker_date: str | None = None
         # REQ-004: initialize status snapshot
         self._snapshot = StatusSnapshot()
         registry.ensure_default_strategies_loaded()
@@ -328,10 +324,6 @@ class Daemon:
         # This block is a belt-and-suspenders fallback only if holiday_cache is wired separately.
         intent_venue = _resolve_intent_venue(nxt_only=nxt_only)
         trading_date = now.date().isoformat()
-        # Reset the buy reentry tracker at a new trading day.
-        if self._tracker_date != trading_date:
-            self._admitted_slots.clear()
-            self._tracker_date = trading_date
 
         # REQ-007: fan-in slot collection from all configured instances.
         if len(self._slot_ports) > 1:
@@ -456,6 +448,7 @@ class Daemon:
 
         # Phase 2: serial intent submission on the main thread (transport single-owner).
         intents: list[dict] = []
+        decision_at = now.isoformat()
         for eval_asset, decision in raw_results:
             slot_id = eval_asset["slot_id"]
             source_instance = eval_asset.get("_source_instance", self.config.instance_key)
@@ -479,14 +472,6 @@ class Daemon:
                         {"symbol": eval_asset["symbol"], "reason": "missing_slot_id", "kind": "diagnostic"}
                     )
                     continue
-                # Buy reentry guard: slot already admitted today -> skip
-                # Use (instance, slot_id) as the reentry key (REQ-007).
-                reentry_key = f"{source_instance}:{slot_id}"
-                if reentry_key in self._admitted_slots:
-                    diagnostics.append(
-                        {"slot_id": slot_id, "reason": "reentry_skip", "kind": "skipped"}
-                    )
-                    continue
                 # Build buy payload — no stop_loss/take_profit (TVR pure rebalancing, [exit] optional)
                 buy_kwargs: dict = {
                     "trading_date": trading_date,
@@ -494,6 +479,7 @@ class Daemon:
                     "strategy_id": strategy.strategy_id,
                     "venue": intent_venue,
                     "instance_key": source_instance,
+                    "decision_at": decision_at,
                     "timeout_sec": self.config.execution.timeout_sec,
                     "slippage_pct": self.config.execution.slippage_pct,
                 }
@@ -513,9 +499,7 @@ class Daemon:
                 intent_port = self._intent_ports.get(source_instance, self._intent)
                 response = intent_port.submit_buy(payload)
                 intents.append({"payload": payload, "response": response})
-                if response.get("status") == "admitted":
-                    self._admitted_slots.add(reentry_key)
-                elif response.get("status") == "rejected":
+                if response.get("status") == "rejected":
                     reason = response.get("reason")
                     diagnostics.append(
                         {"slot_id": slot_id, "reason": reason, "kind": "rejected"}
@@ -537,7 +521,7 @@ class Daemon:
                     strategy_id=strategy.strategy_id,
                     venue=intent_venue,
                     instance_key=source_instance,
-                    decision_at=now.isoformat(),
+                    decision_at=decision_at,
                 )
                 # REQ-007: route to source instance's intent port.
                 intent_port = self._intent_ports.get(source_instance, self._intent)

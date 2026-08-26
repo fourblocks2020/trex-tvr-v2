@@ -328,11 +328,12 @@ def test_ac7_build_buy_intent_includes_instance_key():
         strategy_id="tvr_v1",
         venue="KRX",
         instance_key="inst_a",
+        decision_at="cycle-1",
         stop_loss_pct=0.0,
         take_profit_pct=0.0,
     )
     assert "inst_a" in payload["intent_id"]
-    assert payload["intent_id"] == "tvr_v1:inst_a:2026-07-06:slot_001"
+    assert payload["intent_id"] == "buy:tvr_v1:inst_a:2026-07-06:slot_001:cycle-1"
     assert payload["venue"] == "KRX"
 
 
@@ -429,8 +430,8 @@ def test_ac10_watchdog_updated_per_instance():
 
 def test_make_intent_id_with_instance_key():
     """make_intent_id includes instance_key between strategy_id and trading_date."""
-    iid = make_intent_id("tvr_v1", "2026-07-06", "slot-1", instance_key="inst_a")
-    assert iid == "tvr_v1:inst_a:2026-07-06:slot-1"
+    iid = make_intent_id("tvr_v1", "2026-07-06", "slot-1", instance_key="inst_a", decision_at="cycle-1")
+    assert iid == "buy:tvr_v1:inst_a:2026-07-06:slot-1:cycle-1"
 
 
 def test_make_sell_intent_id_with_instance_key():
@@ -444,8 +445,8 @@ def test_make_sell_intent_id_with_instance_key():
 
 def test_make_intent_id_default_instance_key():
     """make_intent_id with default instance_key="default"."""
-    iid = make_intent_id("tvr_v1", "2026-07-06", "slot-1")
-    assert iid == "tvr_v1:default:2026-07-06:slot-1"
+    iid = make_intent_id("tvr_v1", "2026-07-06", "slot-1", decision_at="cycle-1")
+    assert iid == "buy:tvr_v1:default:2026-07-06:slot-1:cycle-1"
 
 
 def test_make_sell_intent_id_default_instance_key():

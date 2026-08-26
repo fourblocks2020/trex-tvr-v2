@@ -38,7 +38,7 @@
 ### Inputs
 
 - `trex.slots.req` :: `{filter: inactive,holding, strategy: tvr_v1}` — 현재 slot snapshot 조회
-- `trex.intent.req` buy/sell :: `{intent_type, intent_id, slot_id, qty, venue, ...}` — admission 제출. `venue`는 필수이며 `"NXT"` 또는 `"KRX"` 중 하나다.
+- `trex.intent.req` buy/sell :: `{intent_type, intent_id, slot_id, qty, venue, ...}` — admission 제출. buy `intent_id`는 `buy:{strategy}:{instance}:{date}:{slot}:{decision_at}`, sell `intent_id`는 `sell:{strategy}:{instance}:{date}:{slot}:{decision_at}` 형식이며 `venue`는 필수이고 `"NXT"` 또는 `"KRX"` 중 하나다.
 
 ### Outputs
 

@@ -11,7 +11,12 @@ from __future__ import annotations
 
 import pytest
 
-from trex_tvr.runtime.intent_builder import build_buy_intent, build_sell_intent, make_sell_intent_id
+from trex_tvr.runtime.intent_builder import (
+    build_buy_intent,
+    build_sell_intent,
+    make_intent_id,
+    make_sell_intent_id,
+)
 from trex_tvr.strategies.base import BuySignal, SellSignal
 from trex_tvr.transport.base import IntentPort, WireSchemaError, parse_sell_intent_response
 
@@ -34,12 +39,46 @@ def test_build_buy_intent_includes_required_venue():
         take_profit_pct=0.0,
         strategy_id="tvr_v1",
         venue="KRX",
+        decision_at="2026-07-04T09:00:00+09:00",
     )
 
     assert payload["intent_type"] == "buy"
+    assert payload["intent_id"] == (
+        "buy:tvr_v1:default:2026-07-04:slot-buy:2026-07-04T09:00:00+09:00"
+    )
     assert payload["venue"] == "KRX"
     assert payload["slot_id"] == "slot-buy"
     assert payload["entry_price"] == 71000
+
+
+def test_buy_intent_id_is_stable_within_decision_and_changes_next_cycle():
+    signal = BuySignal(
+        symbol="005930",
+        target_qty=3,
+        allocated_capital=100000,
+        reason="rebalance_buy",
+        strategy_id="tvr_v1",
+        entry_price=71000,
+    )
+    common = {
+        "trading_date": "2026-07-04",
+        "slot_id": "slot-buy",
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "strategy_id": "tvr_v1",
+        "venue": "KRX",
+    }
+    id1 = build_buy_intent(
+        signal, **common, decision_at="2026-07-04T09:00:00+09:00"
+    )["intent_id"]
+    id2 = build_buy_intent(
+        signal, **common, decision_at="2026-07-04T09:00:00+09:00"
+    )["intent_id"]
+    id3 = build_buy_intent(
+        signal, **common, decision_at="2026-07-04T09:01:00+09:00"
+    )["intent_id"]
+    assert id1 == id2
+    assert id3 != id1
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +224,16 @@ def test_sell_intent_id_requires_decision_cycle_token():
         make_sell_intent_id("tvr_v1", "2026-07-04", "slot-1")
 
 
+def test_buy_intent_id_namespace_prefix_and_required_decision_cycle_token():
+    buy_id = make_intent_id(
+        "tvr_v1", "2026-07-04", "slot-1", decision_at="2026-07-04T09:00:00+09:00"
+    )
+    assert buy_id == "buy:tvr_v1:default:2026-07-04:slot-1:2026-07-04T09:00:00+09:00"
+    assert buy_id.startswith("buy:")
+    with pytest.raises(ValueError, match="decision_at"):
+        make_intent_id("tvr_v1", "2026-07-04", "slot-1")
+
+
 @pytest.mark.parametrize(
     ("builder", "kwargs"),
     [
@@ -204,6 +253,7 @@ def test_sell_intent_id_requires_decision_cycle_token():
                 "stop_loss_pct": 0.0,
                 "take_profit_pct": 0.0,
                 "strategy_id": "tvr_v1",
+                "decision_at": "cycle-1",
             },
         ),
         (
