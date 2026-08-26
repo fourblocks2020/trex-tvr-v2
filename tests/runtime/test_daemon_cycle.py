@@ -286,12 +286,18 @@ def test_buy_re_evaluates_after_pending_buy_and_later_holding_snapshot():
     daemon = _daemon(slot, intent, StubMarketData(2000), datetime(2026, 6, 8, 10, 0, tzinfo=KST))
 
     first = daemon.run_decision_cycle(datetime(2026, 6, 8, 10, 0, tzinfo=KST))
-    second = daemon.run_decision_cycle(datetime(2026, 6, 8, 10, 1, tzinfo=KST))
-    third = daemon.run_decision_cycle(datetime(2026, 6, 8, 10, 2, tzinfo=KST))
 
     assert len(first["intents"]) == 1
     assert first["intents"][0]["payload"]["intent_type"] == "buy"
+    assert len(intent.submitted) == 1
+
+    second = daemon.run_decision_cycle(datetime(2026, 6, 8, 10, 1, tzinfo=KST))
+
     assert second["intents"] == []
+    assert len(intent.submitted) == 1
+
+    third = daemon.run_decision_cycle(datetime(2026, 6, 8, 10, 2, tzinfo=KST))
+
     assert third["intents"][0]["payload"]["intent_type"] == "buy"
     assert third["intents"][0]["payload"]["intent_id"] != first["intents"][0]["payload"]["intent_id"]
     assert len(intent.submitted) == 2
