@@ -65,9 +65,11 @@ trex-tvr-backtest --config instance.example --date-range 20260501:20260612 \
 - **slot_id is the canonical key** (buy and sell intents).
 - **TVR exit**: TVR is a pure rebalancing strategy — it does NOT declare stop_loss/take_profit
   on buy intents. The `[exit]` config section is optional and omitted for TVR.
-- **Idempotency**: buy intent는 slot/day 단위 키를 사용한다. sell intent는
-  `sell:{strategy_id}:{instance}:{trading_date}:{slot_id}:{decision_at}`으로 한 snapshot
-  decision 안에서는 멱등이고, 이후 holding snapshot의 독립 판단은 새 키를 사용한다.
+- **Idempotency**: buy intent는
+  `buy:{strategy_id}:{instance}:{trading_date}:{slot_id}:{decision_at}`, sell intent는
+  `sell:{strategy_id}:{instance}:{trading_date}:{slot_id}:{decision_at}`을 사용한다.
+  같은 authoritative snapshot decision의 transport duplicate는 같은 키를 유지하고,
+  이후 authoritative snapshot의 독립 decision은 새 키를 사용한다.
 - **Snapshot-only execution boundary**: TVR은 core slot snapshot만 전략 판단 입력으로
   사용한다. broker/fill event, retryability 또는 attempt identity를 구독하지 않는다.
 - **RabbitMQ resilience**: TVR typed config가 heartbeat 30초, blocked connection timeout
