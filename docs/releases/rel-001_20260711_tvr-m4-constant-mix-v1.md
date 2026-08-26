@@ -58,7 +58,7 @@ v1의 핵심은 신규 데이터 소스 없이 현재 보유/현금/현재가와
 
 세 항목은 GitHub Project #7에서 Backlog / Product Milestone `unassigned`로 보존하며, M5 release 또는 delivery의 선행조건·blocker로 취급하지 않는다. TVR runtime e2e는 trex-core 재시작이나 실제 주문 smoke를 자동으로 승인하지 않는다.
 
-재진입은 별도 우선순위 결정 후 새 Discovery에서 운영 요구, 검증 환경·데이터 소스·소유 repo 및 restart/실주문 승인 범위를 다시 확정하는 경우에만 허용한다.
+재진입은 daemon-local same-day guard가 아니라 authoritative slot snapshot과 현재 전략 조건으로만 판단한다. 별도 우선순위 결정 후 새 Discovery에서 운영 요구, 검증 환경·데이터 소스·소유 repo 및 restart/실주문 승인 범위를 다시 확정하는 경우에만 운영 정책으로 확대할 수 있다.
 
 ## 현재 준비 상태
 

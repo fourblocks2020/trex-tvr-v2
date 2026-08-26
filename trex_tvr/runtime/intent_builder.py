@@ -14,8 +14,7 @@ buy payload carries `slot_id` and does NOT carry the deprecated `portfolio_id`,
 `symbol`, `trading_date`, or `allocated_capital` keys. trex-core resolves
 the symbol from the universe at admission.
 
-Buy idempotency remains deterministic per slot and trading day. Sell idempotency
-also includes the decision-cycle timestamp: duplicate transport submission of one
+Buy/sell idempotency is decision-scoped: duplicate transport submission of one
 decision keeps the same key, while a later core snapshot can produce an independent
 strategy decision without consuming broker retry metadata.
 
@@ -42,13 +41,17 @@ def make_intent_id(
     trading_date: str,
     slot_id: str,
     instance_key: str = "default",
+    decision_at: str = "",
 ) -> str:
-    """Deterministic idempotency key — one buy admission per (instance, slot) per trading day.
+    """Deterministic key for one buy decision cycle.
 
-    BAT-002 REQ-007: instance_key added to prevent cross-instance collision.
-    Format: `{strategy_id}:{instance_key}:{trading_date}:{slot_id}`
+    ``decision_at`` comes from the current decision cycle, not from a broker result.
+    This preserves transport idempotency for one decision while allowing a later
+    holding snapshot to produce a new independent intent.
     """
-    return f"{strategy_id}:{instance_key}:{trading_date}:{slot_id}"
+    if not decision_at:
+        raise ValueError("decision_at is required for a buy intent id")
+    return f"buy:{strategy_id}:{instance_key}:{trading_date}:{slot_id}:{decision_at}"
 
 
 def make_sell_intent_id(
@@ -77,6 +80,7 @@ def build_buy_intent(
     stop_loss_pct: float,
     take_profit_pct: float,
     strategy_id: str,
+    decision_at: str,
     venue: str | None = None,
     instance_key: str = "default",
     timeout_sec: int | None = None,
@@ -100,7 +104,9 @@ def build_buy_intent(
     entry = float(signal.entry_price)
     payload: dict = {
         "intent_type": "buy",
-        "intent_id": make_intent_id(strategy_id, trading_date, slot_id, instance_key),
+        "intent_id": make_intent_id(
+            strategy_id, trading_date, slot_id, instance_key, decision_at
+        ),
         "slot_id": slot_id,
         "qty": int(signal.target_qty),
         "entry_price": int(signal.entry_price),

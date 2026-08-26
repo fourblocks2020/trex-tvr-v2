@@ -37,7 +37,7 @@
 
 ### Key Fields
 
-- `intent_id` :: str :: buy는 slot/day 키, sell은 `sell:{strategy}:{instance}:{date}:{slot}:{decision_at}` — correlation_id이자 멱등키
+- `intent_id` :: str :: buy는 `buy:{strategy}:{instance}:{date}:{slot}:{decision_at}`, sell은 `sell:{strategy}:{instance}:{date}:{slot}:{decision_at}` — correlation_id이자 decision-scoped 멱등키
 - `symbol` :: str :: 대상 종목 코드
 - `qty` :: int? :: 주문 수량 (allocated_capital 대신 지정 가능)
 - `allocated_capital` :: int? :: 배정 자본 (KRW)
@@ -54,7 +54,7 @@
 
 ### State Rules
 
-- buy intent는 slot/day 단위로 dedup한다.
+- buy intent는 한 snapshot decision의 `decision_at`을 키에 포함한다. 동일 decision의 transport 중복은 dedup하고 이후 authoritative snapshot의 새 전략 판단은 독립 키를 사용한다.
 - sell intent는 한 snapshot decision의 `decision_at`을 키에 포함한다. 동일 decision의 transport 중복은 dedup하고 이후 holding snapshot의 새 전략 판단은 독립 키를 사용한다.
 - buy/sell intent는 `venue`를 항상 포함한다. NXT-only session의 eligible slot은 `NXT`, 그 외 tradeable eligible slot은 `KRX`를 사용한다.
 

@@ -48,6 +48,7 @@ def test_threshold_matches_intent_builder(sim: ExitSimulator) -> None:
     payload = build_buy_intent(
         signal, trading_date="2026-06-10", slot_id="slot-1",
         stop_loss_pct=2.0, take_profit_pct=4.0, strategy_id="tvr_v1", venue="KRX",
+        decision_at="2026-06-10T09:15:00+09:00",
     )
     assert payload["stop_loss_price"] == thresholds["stop_loss_price"]
     assert payload["take_profit_price"] == thresholds["take_profit_price"]

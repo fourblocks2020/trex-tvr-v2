@@ -104,8 +104,7 @@ def test_full_cycle_emits_buy_intent_for_inactive_slot():
     assert payload["intent_type"] == "buy"
     assert payload["slot_id"] == "slot-1"
     assert payload["venue"] == "KRX"
-    # BAT-002 REQ-007: intent_id now includes instance_key.
-    assert payload["intent_id"] == "tvr_v1:default:2026-06-08:slot-1"
+    assert payload["intent_id"] == "buy:tvr_v1:default:2026-06-08:slot-1:2026-06-08T10:00:00+09:00"
     # REQ-003 AC-2: TVR buy intent has no stop_loss_price / take_profit_price
     assert "stop_loss_price" not in payload
     assert "take_profit_price" not in payload
@@ -241,24 +240,106 @@ def test_degraded_hold():
     assert len(result["intents"]) == 0
 
 
-def test_buy_reentry_guard_applies_to_buy_only():
-    """AC-REQ003-8: buy reentry guard — same slot buy skipped on same day, holding sell not guarded."""
+class _SequencedSlotPort:
+    def __init__(self, responses: list[dict]) -> None:
+        self._responses = iter(responses)
+        self.calls: list[dict] = []
+
+    def request_slots(self, *, filter, strategy=None) -> dict:
+        self.calls.append({"filter": filter, "strategy": strategy})
+        return next(self._responses)
+
+
+class _SequencedIntentPort:
+    def __init__(self, responses: list[dict]) -> None:
+        self._responses = iter(responses)
+        self.submitted: list[dict] = []
+        self.sell_submitted: list[dict] = []
+
+    def submit_buy(self, payload: dict) -> dict:
+        self.submitted.append(payload)
+        resp = {**next(self._responses)}
+        resp.setdefault("intent_id", payload["intent_id"])
+        return resp
+
+    def submit_sell(self, payload: dict) -> dict:
+        self.sell_submitted.append(payload)
+        resp = {**next(self._responses)}
+        resp.setdefault("intent_id", payload["intent_id"])
+        return resp
+
+
+def test_buy_re_evaluates_after_pending_buy_and_later_holding_snapshot():
+    slot = _SequencedSlotPort(
+        [
+            {"slots": [inactive_slot(qty=0, cash_balance=1_000_000, strategy_params=_TVR_PARAMS)], "degraded": False},
+            {"slots": [{"slot_id": "slot-1", "status": "pending_buy", "symbol": "005930", "qty": 0, "cash_balance": 1_000_000, "strategy_params": _TVR_PARAMS}], "degraded": False},
+            {"slots": [holding_slot(qty=10, cash_balance=500_000, strategy_params=_TVR_PARAMS)], "degraded": False},
+        ]
+    )
+    intent = _SequencedIntentPort(
+        [
+            {"status": "admitted", "slot_id": "slot-1"},
+            {"status": "admitted", "slot_id": "slot-1"},
+        ]
+    )
+    daemon = _daemon(slot, intent, StubMarketData(2000), datetime(2026, 6, 8, 10, 0, tzinfo=KST))
+
+    first = daemon.run_decision_cycle(datetime(2026, 6, 8, 10, 0, tzinfo=KST))
+
+    assert len(first["intents"]) == 1
+    assert first["intents"][0]["payload"]["intent_type"] == "buy"
+    assert len(intent.submitted) == 1
+
+    second = daemon.run_decision_cycle(datetime(2026, 6, 8, 10, 1, tzinfo=KST))
+
+    assert second["intents"] == []
+    assert len(intent.submitted) == 1
+
+    third = daemon.run_decision_cycle(datetime(2026, 6, 8, 10, 2, tzinfo=KST))
+
+    assert third["intents"][0]["payload"]["intent_type"] == "buy"
+    assert third["intents"][0]["payload"]["intent_id"] != first["intents"][0]["payload"]["intent_id"]
+    assert len(intent.submitted) == 2
+
+
+def test_buy_re_evaluates_after_pre_broker_rejection_when_holding_snapshot_now_buys():
+    slot = _SequencedSlotPort(
+        [
+            {"slots": [inactive_slot(qty=0, cash_balance=1_000_000, strategy_params=_TVR_PARAMS)], "degraded": False},
+            {"slots": [holding_slot(qty=10, cash_balance=500_000, strategy_params=_TVR_PARAMS)], "degraded": False},
+        ]
+    )
+    intent = _SequencedIntentPort(
+        [
+            {"status": "rejected", "reason": "reconcile_warned", "slot_id": "slot-1"},
+            {"status": "admitted", "slot_id": "slot-1"},
+        ]
+    )
+    daemon = _daemon(slot, intent, StubMarketData(2000), datetime(2026, 6, 8, 10, 0, tzinfo=KST))
+
+    first = daemon.run_decision_cycle(datetime(2026, 6, 8, 10, 0, tzinfo=KST))
+    second = daemon.run_decision_cycle(datetime(2026, 6, 8, 10, 1, tzinfo=KST))
+
+    assert first["diagnostics"] == [{"slot_id": "slot-1", "reason": "reconcile_warned", "kind": "rejected"}]
+    assert len(second["intents"]) == 1
+    assert second["intents"][0]["payload"]["intent_type"] == "buy"
+    assert second["intents"][0]["payload"]["intent_id"] != first["intents"][0]["payload"]["intent_id"]
+    assert len(intent.submitted) == 2
+
+
+def test_holding_snapshot_without_buy_condition_does_not_build_or_submit_buy():
     now = datetime(2026, 6, 8, 10, 0, tzinfo=KST)
-    slot_row = inactive_slot(qty=0, cash_balance=1_000_000, strategy_params=_TVR_PARAMS)
+    slot_row = holding_slot(qty=7, cash_balance=30_000, strategy_params=_TVR_PARAMS)
     slot = StubSlotPort({"slots": [slot_row], "degraded": False})
     intent = StubIntentPort({"status": "admitted", "slot_id": "slot-1"})
-    daemon = _daemon(slot, intent, StubMarketData(2000), now)
+    daemon = _daemon(slot, intent, StubMarketData(10_000), now)
 
-    # First cycle: buy admitted
-    result1 = daemon.run_decision_cycle()
-    assert len(result1["intents"]) == 1
-    assert result1["intents"][0]["payload"]["intent_type"] == "buy"
+    result = daemon.run_decision_cycle()
 
-    # Second cycle same day: buy reentry skip
-    result2 = daemon.run_decision_cycle()
-    assert len(result2["intents"]) == 0
-    diag_reasons = [d.get("reason") for d in result2["diagnostics"]]
-    assert "reentry_skip" in diag_reasons
+    assert result["status"] == "ok"
+    assert result["intents"] == []
+    assert intent.submitted == []
 
 
 def test_req003_ac1_strategy_filter_passed_to_slot_port():
